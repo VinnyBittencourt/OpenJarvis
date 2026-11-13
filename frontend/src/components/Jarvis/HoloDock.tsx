@@ -4,6 +4,7 @@ import { Activity, BarChart3, Bot, Database, History, MessageSquare, Plus, Scrol
 import { useAppStore } from '../../lib/store';
 import { useHudStore } from '../../lib/hud';
 import { tr, useLang } from '../../lib/life';
+import { useControl } from '../../hooks/useControl';
 
 // Navigation for the holographic theme: a floating rail of diamond keys on the left edge.
 // The original sidebar (history, model picker) becomes a drawer opened from the first key.
@@ -19,6 +20,7 @@ const ITEMS = [
 
 export function HoloDock() {
   const lang = useLang();
+  useControl(); // tray menu and Ctrl+Alt+J
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const sidebarOpen = useAppStore((s) => s.sidebarOpen);

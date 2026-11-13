@@ -116,6 +116,19 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
     wasBusy.current = busy;
   }, [busy, enabled]);
 
+  // The tray and Ctrl+Alt+J open the conversation as if he had said "Jarvis".
+  useEffect(() => {
+    const wake = () => {
+      if (meetingRecording()) return;
+      session.current = true;
+      awakeUntil.current = Date.now() + SESSION_MS;
+      useHudStore.getState().setWake('awake');
+      playSound('wake');
+    };
+    window.addEventListener('jarvis-wake', wake);
+    return () => window.removeEventListener('jarvis-wake', wake);
+  }, []);
+
   // A new chat starts over: the first phrase needs the wake word or a greeting again.
   const greetNonce = useHudStore((s) => s.greetNonce);
   useEffect(() => {
