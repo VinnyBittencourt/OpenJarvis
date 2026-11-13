@@ -1,7 +1,9 @@
+import { useEffect } from 'react';
 import { useAppStore } from '../../lib/store';
 import { useHudStore } from '../../lib/hud';
 import { useTtsStore } from '../../lib/tts';
 import { prefetchFillers } from '../../lib/fillers';
+import { isAppMode } from '../../lib/appmode';
 
 // One click per page load turns hands-free mode on: browsers only allow the microphone and
 // audio playback after a user gesture. After that, saying "Jarvis" is enough.
@@ -21,6 +23,13 @@ export function HandsFreeGate() {
   };
   const deactivate = () => useHudStore.getState().setActive(false);
 
+  // Desktop app window: audio and microphone are allowed without a click, so hands-free
+  // mode starts by itself when the app opens.
+  useEffect(() => {
+    if (isAppMode()) activate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // `active` can be restored from a previous visit; wake stays 'off' until the click.
   const running = active && wake !== 'off';
   return (
@@ -30,7 +39,7 @@ export function HandsFreeGate() {
       ) : (
         <button className="hud-gate-btn" onClick={activate}>ATIVAR JARVIS</button>
       )}
-      {!running && !error && <p>Um clique por sessão. Depois é só dizer &quot;Jarvis&quot;.</p>}
+      {!running && !error && !isAppMode() && <p>Um clique por sessão. Depois é só dizer &quot;Jarvis&quot;.</p>}
       {error && <p className="err">{error}</p>}
     </div>
   );

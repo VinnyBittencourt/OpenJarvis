@@ -68,3 +68,35 @@ export const saveCity = (city: string) =>
     return r.json() as Promise<SecretaryPanel>;
   });
 export const fetchNotices = () => getJson<{ notifications: Notice[] }>('/v1/jarvis/notifications').then((r) => r.notifications);
+
+export interface MemoryFact { id: number; text: string; kind: string; source: string; created: string }
+export const fetchMemory = () => getJson<{ facts: MemoryFact[] }>('/v1/jarvis/memory').then((r) => r.facts);
+export const addMemory = (text: string) =>
+  fetch('/v1/jarvis/memory', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).then((r) => {
+    if (!r.ok) throw new Error('Could not save the note');
+  });
+export const deleteMemory = (id: number) =>
+  fetch(`/v1/jarvis/memory/${id}`, { method: 'DELETE' }).then((r) => {
+    if (!r.ok) throw new Error('Could not delete the note');
+  });
+
+export interface VoiceMetrics {
+  turns: number;
+  stt_ms: number | null;
+  first_audio_ms: number | null;
+  total_ms: number | null;
+}
+export const fetchVoiceMetrics = () => getJson<VoiceMetrics>('/v1/jarvis/metrics');
+
+export interface VoiceEngine { engine: 'piper' | 'kokoro'; piper_voice: string; piper_available: boolean; error: string }
+export const fetchVoiceEngine = () => getJson<VoiceEngine>('/v1/jarvis/voice');
+export const setVoiceEngine = (engine: 'piper' | 'kokoro') =>
+  fetch('/v1/jarvis/voice', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ engine }),
+  }).then((r) => r.json() as Promise<VoiceEngine>);

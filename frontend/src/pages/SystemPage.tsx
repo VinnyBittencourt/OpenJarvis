@@ -2,12 +2,16 @@ import { useEffect, useState } from 'react';
 import { Copy } from 'lucide-react';
 import {
   fetchGuardian, fetchPrompts, fetchClaudeUsage, fetchNotices, fetchSecretary, saveCity,
+  fetchMemory, addMemory, deleteMemory, fetchVoiceMetrics, fetchVoiceEngine, setVoiceEngine,
   type GuardianState, type SavedPrompt, type ClaudeUsage, type Notice, type SecretaryPanel,
+  type MemoryFact, type VoiceMetrics, type VoiceEngine,
 } from '../lib/jarvis';
 
-type Tab = 'guardian' | 'secretary' | 'usage' | 'prompts' | 'notices';
+type Tab = 'guardian' | 'memory' | 'speed' | 'secretary' | 'usage' | 'prompts' | 'notices';
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'guardian', label: 'Guardião' },
+  { id: 'memory', label: 'Memória' },
+  { id: 'speed', label: 'Voz e desempenho' },
   { id: 'secretary', label: 'Sexta-feira' },
   { id: 'usage', label: 'Uso do Claude' },
   { id: 'prompts', label: 'Prompts' },
@@ -201,6 +205,86 @@ function NoticesTab() {
   );
 }
 
+function MemoryTab() {
+  const [facts, setFacts] = useState<MemoryFact[] | null>(null);
+  const [note, setNote] = useState('');
+  const [error, setError] = useState('');
+  const reload = () => fetchMemory().then(setFacts).catch(() => setError('Não consegui ler a memória. O servidor do Jarvis está ligado?'));
+  useEffect(() => { void reload(); }, []);
+  const save = () => {
+    if (!note.trim()) return;
+    addMemory(note).then(() => { setNote(''); setError(''); return reload(); }).catch(() => setError('Não consegui guardar a anotação.'));
+  };
+  const remove = (id: number) => deleteMemory(id).then(reload).catch(() => setError('Não consegui apagar a anotação.'));
+  return (
+    <div className="space-y-3">
+      <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        O que o Jarvis guarda sobre o senhor. Por voz: &quot;lembre que...&quot;, &quot;o que você sabe sobre...&quot; e &quot;esqueça...&quot;.
+      </p>
+      <div className="flex gap-2">
+        <input value={note} onChange={(e) => setNote(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && save()}
+          placeholder="Nova anotação" aria-label="Nova anotação"
+          className="flex-1 px-3 py-2 rounded-lg text-sm" style={{ ...card, color: 'var(--color-text)' }} />
+        <button onClick={save} className="px-3 py-2 rounded-lg text-xs font-medium cursor-pointer" style={{ ...card, color: 'var(--color-accent)' }}>Guardar</button>
+      </div>
+      {error && <p className="text-xs" style={{ color: 'var(--color-error, #f87171)' }}>{error}</p>}
+      {facts && facts.length === 0 && <p className="text-sm" style={muted}>Nada guardado ainda.</p>}
+      {facts && [...facts].reverse().map((f) => (
+        <div key={f.id} className="flex items-start gap-3 px-3 py-2 rounded-lg" style={card}>
+          <div className="flex-1">
+            <p className="text-sm" style={{ color: 'var(--color-text)' }}>{f.text}</p>
+            <p className="text-xs mt-0.5" style={muted}>{f.created}, {f.source === 'auto' ? 'guardado sozinho' : f.source === 'tela' ? 'escrito aqui' : 'a seu pedido'}</p>
+          </div>
+          <button onClick={() => void remove(f.id)} className="text-xs cursor-pointer" style={{ color: 'var(--color-text-secondary)' }}>Apagar</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const seconds = (ms: number | null | undefined) => (ms == null ? 'sem dados' : `${(ms / 1000).toFixed(1)} s`);
+
+function SpeedTab() {
+  const { data: metrics } = usePoll<VoiceMetrics>(fetchVoiceMetrics, 5000);
+  const [voice, setVoice] = useState<VoiceEngine | null>(null);
+  useEffect(() => { fetchVoiceEngine().then(setVoice).catch(() => setVoice(null)); }, []);
+  const choose = (engine: 'piper' | 'kokoro') => setVoiceEngine(engine).then(setVoice).catch(() => {});
+  return (
+    <div className="space-y-5">
+      <div>
+        <h3 className="text-xs font-medium mb-2" style={muted}>Tempo de resposta por voz (média das últimas {metrics?.turns ?? 0} falas)</h3>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="px-3 py-2 rounded-lg" style={card}>
+            <p className="text-xs" style={muted}>Entender a fala</p>
+            <p className="text-lg" style={{ color: 'var(--color-text)' }}>{seconds(metrics?.stt_ms)}</p>
+          </div>
+          <div className="px-3 py-2 rounded-lg" style={card}>
+            <p className="text-xs" style={muted}>Do fim da fala até a voz do Jarvis</p>
+            <p className="text-lg" style={{ color: 'var(--color-text)' }}>{seconds(metrics?.first_audio_ms)}</p>
+          </div>
+        </div>
+        <p className="text-xs mt-2" style={muted}>Conta desde que o servidor foi ligado. A frase &quot;Um momento, senhor&quot; também vale como primeira voz.</p>
+      </div>
+      <div>
+        <h3 className="text-xs font-medium mb-2" style={muted}>Voz do Jarvis</h3>
+        {voice ? (
+          <div className="flex gap-2 items-center flex-wrap">
+            {(['piper', 'kokoro'] as const).map((e) => (
+              <button key={e} onClick={() => void choose(e)} disabled={e === 'piper' && !voice.piper_available}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer disabled:opacity-40"
+                style={{ ...card, color: voice.engine === e ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}>
+                {e === 'piper' ? `Faber${voice.piper_voice ? '' : ' (sem arquivo de voz)'}` : 'Kokoro (pm_alex)'}
+              </button>
+            ))}
+            {voice.error && <p className="text-xs w-full" style={muted}>A voz Faber falhou e o Jarvis voltou ao Kokoro: {voice.error}</p>}
+          </div>
+        ) : <p className="text-sm" style={muted}>Sem resposta do servidor.</p>}
+        <p className="text-xs mt-2" style={muted}>A troca vale a partir da próxima frase.</p>
+      </div>
+    </div>
+  );
+}
+
 export function SystemPage() {
   const [tab, setTab] = useState<Tab>('guardian');
   return (
@@ -210,7 +294,7 @@ export function SystemPage() {
         <p className="text-sm mb-5" style={{ color: 'var(--color-text-secondary)' }}>
           Guardião, uso do Claude, prompts do Ryan e da Ember, e avisos. Tudo vem de arquivos locais.
         </p>
-        <div className="flex gap-2 mb-5">
+        <div className="flex flex-wrap gap-2 mb-5">
           {TABS.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)} className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer"
               style={{ ...card, color: tab === t.id ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}>
@@ -219,6 +303,8 @@ export function SystemPage() {
           ))}
         </div>
         {tab === 'guardian' && <GuardianTab />}
+        {tab === 'memory' && <MemoryTab />}
+        {tab === 'speed' && <SpeedTab />}
         {tab === 'secretary' && <SecretaryTab />}
         {tab === 'usage' && <UsageTab />}
         {tab === 'prompts' && <PromptsTab />}

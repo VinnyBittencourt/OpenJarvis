@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { transcribeAudio } from '../lib/api';
 import { useHudStore } from '../lib/hud';
 import { useTtsStore } from '../lib/tts';
+import { cancelTurn, markSpeechEnd, markTranscribed } from '../lib/voiceMetrics';
 
 // Hands-free listening. The microphone is analysed in the browser, every utterance is
 // transcribed by the LOCAL Whisper (/v1/speech/transcribe) and only text that contains the
@@ -141,6 +142,7 @@ export function useWakeWord({ enabled, busy, onCommand }: Options) {
     };
 
     const goodbye = () => {
+      cancelTurn();
       session.current = false;
       awakeUntil.current = 0;
       const tts = useTtsStore.getState();
@@ -154,7 +156,10 @@ export function useWakeWord({ enabled, busy, onCommand }: Options) {
       const text = raw.trim();
       const open = session.current && Date.now() < awakeUntil.current;
       if (!open) session.current = false;
-      const idle = () => hud.setWake(open ? 'awake' : 'standby');
+      const idle = () => {
+        cancelTurn();
+        hud.setWake(open ? 'awake' : 'standby');
+      };
       if (!text || !/\p{L}/u.test(text) || NOISE.test(text)) return idle();
       // Inside the open conversation everything is a request, with or without the name.
       if (open) return STOP_LISTENING.test(text) ? goodbye() : send(text);
@@ -163,6 +168,7 @@ export function useWakeWord({ enabled, busy, onCommand }: Options) {
         const command = text.slice(m.index + m[0].length).replace(/^[\s,.:;!?-]+/, '').trim();
         if (command) return STOP_LISTENING.test(command) ? goodbye() : send(command);
         // Only the name: the conversation opens and Jarvis waits for the request.
+        cancelTurn();
         session.current = true;
         awakeUntil.current = Date.now() + SESSION_MS;
         hud.setWake('awake');
@@ -183,8 +189,10 @@ export function useWakeWord({ enabled, busy, onCommand }: Options) {
       }
       hud.setWake('transcribing');
       try {
+        markSpeechEnd();
         const wav = encodeWav16k(captured, ctx.sampleRate);
         const result = await transcribeAudio(wav, 'speech.wav');
+        markTranscribed();
         if (!cancelled) handleText(result.text || '');
       } catch (err) {
         if (!cancelled) {
