@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchGuardian, type GuardianState } from '../../lib/jarvis';
 import { useHudMode, useHudStore } from '../../lib/hud';
 import { useAppStore } from '../../lib/store';
-import { startLife, useLifeStore } from '../../lib/life';
+import { startLife, tr, useLang, useLifeStore } from '../../lib/life';
 
 // Cockpit frame of the chat: two glass panes floating in perspective at the sides (live
 // telemetry on the left, voice link on the right) and a clock rail on top. Decorative only,
@@ -10,6 +10,10 @@ import { startLife, useLifeStore } from '../../lib/life';
 const MODE_PT: Record<string, string> = {
   off: 'Desligada', standby: 'Em espera', listening: 'Ouvindo', capturing: 'Recebendo',
   thinking: 'Processando', speaking: 'Falando',
+};
+const MODE_EN: Record<string, string> = {
+  off: 'Off', standby: 'Standby', listening: 'Listening', capturing: 'Receiving',
+  thinking: 'Processing', speaking: 'Speaking',
 };
 
 function Gauge({ label, value }: { label: string; value?: number | null }) {
@@ -32,6 +36,8 @@ export function HudScene() {
   const [now, setNow] = useState(new Date());
   const [g, setG] = useState<GuardianState | null>(null);
   const life = useLifeStore((st) => st.status);
+  const lang = useLang();
+  const locale = lang === 'en' ? 'en-GB' : 'pt-BR';
   useEffect(() => startLife(), []);
 
   useEffect(() => {
@@ -46,34 +52,34 @@ export function HudScene() {
   }, []);
 
   const m = g?.metrics ?? {};
-  const date = now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' });
+  const date = now.toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' });
   return (
     <div className={`hud-scene ${talk ? 'talk' : ''}`} aria-hidden="true">
       <div className="hud-rail">
         <span>{date}</span>
-        <time>{now.toLocaleTimeString('pt-BR', { hour12: false })}</time>
-        <span>Processamento local</span>
+        <time>{now.toLocaleTimeString(locale, { hour12: false })}</time>
+        <span>{tr(lang, 'Processamento local', 'Local processing')}</span>
       </div>
       <section className="holo-pane left">
-        <h4>Sistema</h4>
+        <h4>{tr(lang, 'Sistema', 'System')}</h4>
         <Gauge label="CPU" value={m.cpu} />
         <Gauge label="RAM" value={m.ram} />
         <Gauge label="GPU" value={m.gpu} />
         <Gauge label="VRAM" value={m.vram_total_pct as number | undefined} />
-        <p>Guardião: <em>{g ? g.mode : 'sem resposta'}</em></p>
+        <p>{tr(lang, 'Guardião', 'Guardian')}: <em>{g ? g.mode : tr(lang, 'sem resposta', 'no answer')}</em></p>
       </section>
       <section className="holo-pane right">
-        <h4>Voz</h4>
-        <p>Escuta: <em>{MODE_PT[mode] ?? mode}</em></p>
+        <h4>{tr(lang, 'Voz', 'Voice')}</h4>
+        <p>{tr(lang, 'Escuta', 'Listening')}: <em>{(lang === 'en' ? MODE_EN : MODE_PT)[mode] ?? mode}</em></p>
         <div className="pane-level"><i style={{ transform: `scaleX(${Math.min(1, level * 4)})` }} /></div>
-        <p>Último pedido</p>
-        <blockquote>{heard || 'Nenhum ainda'}</blockquote>
+        <p>{tr(lang, 'Último pedido', 'Last request')}</p>
+        <blockquote>{heard || tr(lang, 'Nenhum ainda', 'None yet')}</blockquote>
         {life && (
           <>
-            <h4 className="pane-sub">Parceria</h4>
-            <p>Dia <em>{life.days_together}</em>, sequência de <em>{life.streak}</em></p>
-            <p>Nível: <em>{life.tier_name}</em></p>
-            <p>Estado: <em>{life.mood_label}</em></p>
+            <h4 className="pane-sub">{tr(lang, 'Parceria', 'Partnership')}</h4>
+            <p>{tr(lang, 'Dia', 'Day')} <em>{life.days_together}</em>, {tr(lang, 'sequência de', 'streak of')} <em>{life.streak}</em></p>
+            <p>{tr(lang, 'Nível', 'Tier')}: <em>{life.tier_name}</em></p>
+            <p>{tr(lang, 'Estado', 'Mood')}: <em>{life.mood_label}</em></p>
           </>
         )}
       </section>

@@ -5,11 +5,13 @@ import { useTtsStore } from '../../lib/tts';
 import { prefetchFillers } from '../../lib/fillers';
 import { isAppMode } from '../../lib/appmode';
 import { useSpokenAlerts } from '../../hooks/useSpokenAlerts';
+import { tr, useLang } from '../../lib/life';
 
 // One click per page load turns hands-free mode on: browsers only allow the microphone and
 // audio playback after a user gesture. After that, saying "Jarvis" is enough.
 export function HandsFreeGate() {
   const active = useHudStore((s) => s.active);
+  const lang = useLang();
   const error = useHudStore((s) => s.error);
   const wake = useHudStore((s) => s.wake);
   const updateSettings = useAppStore((s) => s.updateSettings);
@@ -37,11 +39,11 @@ export function HandsFreeGate() {
   return (
     <div className="hud-gate">
       {running ? (
-        <button className="hud-gate-btn off" onClick={deactivate}>DESATIVAR ESCUTA</button>
+        <button className="hud-gate-btn off" onClick={deactivate}>{tr(lang, 'DESATIVAR ESCUTA', 'STOP LISTENING')}</button>
       ) : (
-        <button className="hud-gate-btn" onClick={activate}>ATIVAR JARVIS</button>
+        <button className="hud-gate-btn" onClick={activate}>{tr(lang, 'ATIVAR JARVIS', 'ACTIVATE JARVIS')}</button>
       )}
-      {!running && !error && !isAppMode() && <p>Um clique por sessão. Depois é só dizer &quot;Jarvis&quot;.</p>}
+      {!running && !error && !isAppMode() && <p>{tr(lang, 'Um clique por sessão. Depois é só dizer "Jarvis".', 'One click per session. Then just say "Jarvis".')}</p>}
       {error && <p className="err">{error}</p>}
     </div>
   );
