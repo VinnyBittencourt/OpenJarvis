@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { transcribeAudio } from '../lib/api';
 import { useHudStore } from '../lib/hud';
+import { useAppStore } from '../lib/store';
 import { useTtsStore } from '../lib/tts';
 import { playSound } from '../lib/sounds';
 import { cancelTurn, markSpeechEnd, markTranscribed } from '../lib/voiceMetrics';
@@ -11,7 +12,9 @@ import { cancelTurn, markSpeechEnd, markTranscribed } from '../lib/voiceMetrics'
 // request, anything said within two minutes is taken as a request, no wake word needed.
 const START_RMS = 0.02; // loudness that starts an utterance
 const KEEP_RMS = 0.012; // loudness that keeps it going
-const END_SILENCE_MS = 600; // quiet time that ends an utterance
+const END_SILENCE_MS = 800; // quiet time that ends an utterance
+// A pause shorter than this joins the next words to the same request instead of losing them.
+const MERGE_MS = 1500;
 const MIN_SPEECH_MS = 350; // shorter sounds are clicks and coughs
 const MAX_UTTERANCE_MS = 15000;
 const SESSION_MS = 120000; // open conversation: time without the wake word after each request or reply
@@ -26,6 +29,12 @@ const GREETING = /^[\s¡!,.]*(oi+|ol[aá]|bom dia|boa tarde|boa noite|bom noite)
 // "Desativar a escuta": Jarvis says goodbye, then stops speaking and listening.
 const STOP_LISTENING =
   /\b(desativ|deslig|encerr|interromp)\p{L}*\s+(a\s+|o\s+)?(escuta|microfone)(?!\p{L})|\bpar(e|ar|a|em)\s+(a\s+escuta(?!\p{L})|de\s+(me\s+)?(escutar|ouvir)(?!\s+(?!por favor|agora|jarvis)\p{L}))/iu;
+// "Jarvis, pare" / "já chega": silence right away, keep listening.
+const HUSH =
+  /^(?:(?:por favor|please)[\s,]*)?(?:pare|para|parar|chega|j[aá] chega|basta|sil[eê]ncio|quieto|fica quieto|cala(?: a boca)?|stop|enough|that'?s enough|be quiet|quiet)(?:[\s,]+(?:por favor|agora|please|now|jarvis))*[\s.!]*$/iu;
+// "Jarvis, desligue" / "estou ocupado": silence and switch the listening off, without a goodbye.
+const SHUTDOWN =
+  /^(?:(?:por favor|please)[\s,]*)?(?:deslig(?:ue|a|ar)(?: (?:a escuta|tudo|agora))?|estou ocupad[oa]|t[oô] ocupad[oa]|(?:i'?m|i am) busy|shut ?down|turn off)(?:[\s,]+(?:por favor|agora|please|now))*[\s.!]*$/iu;
 // Text Whisper invents out of silence or background noise; never treated as a request.
 const NOISE = /^(obrigad[oa]\.?|tchau\.?|legendas? .*|.*amara\.org.*|e a[ií]\.?|\.+|m+h*m*\.?|h[uã]m+\.?)$/i;
 
@@ -120,6 +129,10 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
     let lastFrameAt = 0;
     let barge = false; // the current utterance started while Jarvis was talking
     let bargeChecking = false;
+    // Pause in the middle of a sentence: the first part is held so the rest can join it.
+    let pending: { frames: Float32Array[]; endedAt: number } | null = null;
+    let mergeFrames: Float32Array[] | null = null;
+    let token = 0;
 
     const reset = () => {
       frames = [];
@@ -148,7 +161,59 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
       hud.setActive(false);
     };
 
-    const handleText = (raw: string) => {
+    // Stop talking now; the conversation stays open.
+    const hush = () => {
+      cancelTurn();
+      onInterruptRef.current?.();
+      useTtsStore.getState().stop();
+      playSound('interrupt');
+      session.current = true;
+      awakeUntil.current = Date.now() + SESSION_MS;
+      hud.setWake('awake');
+    };
+
+    // Stop talking and stop listening, without a spoken goodbye.
+    const shutdown = () => {
+      cancelTurn();
+      onInterruptRef.current?.();
+      useTtsStore.getState().stop();
+      playSound('off');
+      session.current = false;
+      awakeUntil.current = 0;
+      hud.setActive(false);
+    };
+
+    const english = () => {
+      try { return localStorage.getItem('jarvis-lang') === 'en'; } catch { return false; }
+    };
+
+    // Speech that Whisper could not make out: a line in the chat, a soft "no" and a red core.
+    const notUnderstood = () => {
+      cancelTurn();
+      playSound('unclear');
+      hud.flagUnclear();
+      hud.setWake('awake');
+      awakeUntil.current = Date.now() + SESSION_MS;
+      const app = useAppStore.getState();
+      if (app.activeId) {
+        app.addMessage(app.activeId, {
+          id: `unclear-${Date.now()}`,
+          role: 'assistant',
+          content: english() ? "Sorry, sir, I didn't catch that." : 'Não entendi o que foi dito, senhor.',
+          timestamp: Date.now(),
+        });
+      }
+    };
+
+    // The request itself (after the name): stop words act at once, everything else goes to Jarvis.
+    const act = (command: string) => {
+      if (HUSH.test(command)) return hush();
+      if (SHUTDOWN.test(command)) return shutdown();
+      if (STOP_LISTENING.test(command)) return goodbye();
+      return send(command);
+    };
+
+    const handleText = (raw: string, unclear = false) => {
       const text = raw.trim();
       const open = session.current && Date.now() < awakeUntil.current;
       if (!open) session.current = false;
@@ -156,13 +221,18 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
         cancelTurn();
         hud.setWake(open ? 'awake' : 'standby');
       };
+      // Not understood: only said inside a conversation, so background talk never turns it red.
+      if (unclear) return open ? notUnderstood() : idle();
       if (!text || !/\p{L}/u.test(text) || NOISE.test(text)) return idle();
-      // Inside the open conversation everything is a request, with or without the name.
-      if (open) return STOP_LISTENING.test(text) ? goodbye() : send(text);
       const m = WAKE.exec(text);
+      // Inside the open conversation everything is a request, with or without the name.
+      if (open) {
+        const command = m && m.index < 3 ? text.slice(m.index + m[0].length).replace(/^[\s,.:;!?-]+/, '').trim() : text;
+        return command ? act(command) : idle();
+      }
       if (m) {
         const command = text.slice(m.index + m[0].length).replace(/^[\s,.:;!?-]+/, '').trim();
-        if (command) return STOP_LISTENING.test(command) ? goodbye() : send(command);
+        if (command) return act(command);
         // Only the name: the conversation opens and Jarvis waits for the request.
         cancelTurn();
         session.current = true;
@@ -201,6 +271,8 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
         awakeUntil.current = Date.now() + SESSION_MS;
         hud.setWake('awake');
         if (!command) return;
+        if (HUSH.test(command)) return hush();
+        if (SHUTDOWN.test(command)) return shutdown();
         if (STOP_LISTENING.test(command)) return goodbye();
         // give the interrupted answer a moment to close before the new request goes out
         window.setTimeout(() => {
@@ -214,22 +286,29 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
     };
 
     const finish = async () => {
-      const captured = frames;
-      const long = loudMs >= MIN_SPEECH_MS;
+      const merged = mergeFrames;
+      mergeFrames = null;
+      const captured = merged ? [...merged, ...frames] : frames;
+      const long = loudMs >= MIN_SPEECH_MS || merged !== null;
       reset();
       if (!long || !ctx || captured.length === 0) {
         hud.setWake(Date.now() < awakeUntil.current ? 'awake' : 'standby');
         return;
       }
+      const mine = ++token;
+      pending = { frames: captured, endedAt: Date.now() };
       hud.setWake('transcribing');
       try {
         markSpeechEnd();
         const wav = encodeWav16k(captured, ctx.sampleRate);
         const result = await transcribeAudio(wav, 'speech.wav');
+        if (cancelled || mine !== token) return; // he kept talking: the joined audio is transcribed instead
+        pending = null;
         markTranscribed();
-        if (!cancelled) handleText(result.text || '');
+        handleText(result.text || '', result.language === 'unclear');
       } catch (err) {
-        if (!cancelled) {
+        if (!cancelled && mine === token) {
+          pending = null;
           hud.setWake('standby');
           hud.setError(err instanceof Error ? err.message : 'Transcription failed');
         }
@@ -282,10 +361,6 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
         session.current = false;
         hud.setWake('standby');
       }
-      if (current === 'transcribing') {
-        preroll.length = 0;
-        return; // one utterance at a time
-      }
       const copy = new Float32Array(input);
       if (!inSpeech) {
         preroll.push(copy);
@@ -297,7 +372,14 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
           loudMs = 0;
           frames = [...preroll];
           preroll.length = 0;
-          if (useHudStore.getState().wake === 'standby') hud.setWake('capturing');
+          // Speaking again right after a pause: this is the same sentence, keep the first part.
+          if (pending && now - pending.endedAt < MERGE_MS) {
+            mergeFrames = pending.frames;
+            token++; // the transcription of the first part alone is dropped
+          }
+          pending = null;
+          const w = useHudStore.getState().wake;
+          if (w === 'standby' || w === 'transcribing') hud.setWake('capturing');
         }
         return;
       }

@@ -173,6 +173,31 @@ html.jarvis-hud button { transition: border-color 200ms, box-shadow 200ms, backg
 .hud-gate-btn:hover { background: rgba(var(--holo), 0.24); transform: translateY(-1px) scale(1.02); }
 .hud-gate-btn.off { font-size: 10px; padding: 7px 18px; opacity: 0.55; letter-spacing: 0.22em; }
 .hud-gate-btn.off::after { display: none; }
+
+/* Jarvis in English: the projected light turns mint, so the language shows across the whole HUD */
+html.jarvis-hud[data-lang='en'] { --holo: 104, 255, 192; --holo-hot: 232, 255, 244; }
+
+/* Friday's notice and the PT / EN switch, under the listening button */
+.hud-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 12px; max-width: 100%; }
+.friday-notice {
+  display: inline-flex; align-items: center; gap: 10px; max-width: min(560px, calc(100vw - 32px));
+  padding: 7px 8px 7px 12px; font-size: 12px; letter-spacing: 0.04em; color: var(--color-text-secondary);
+  background: rgba(255, 196, 92, 0.08); border: 1px solid rgba(255, 196, 92, 0.5);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  animation: notice-in 0.4s ease-out;
+}
+.friday-dot { width: 7px; height: 7px; border-radius: 50%; background: rgb(255, 196, 92); box-shadow: 0 0 8px rgb(255, 196, 92); animation: notice-pulse 1.6s ease-in-out infinite; flex: none; }
+.friday-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.friday-notice button { flex: none; cursor: pointer; font: 500 11px/1 var(--display); letter-spacing: 0.16em; text-transform: uppercase; padding: 6px 10px; color: rgb(255, 214, 140); background: rgba(255, 196, 92, 0.12); border: 1px solid rgba(255, 196, 92, 0.5); }
+.friday-notice button:hover { background: rgba(255, 196, 92, 0.26); }
+.friday-notice button.x { padding: 6px 8px; letter-spacing: 0; font-size: 14px; }
+@keyframes notice-in { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes notice-pulse { 50% { opacity: 0.35; } }
+.lang-toggle { display: inline-flex; border: 1px solid rgba(var(--holo), 0.45); }
+.lang-toggle button { cursor: pointer; font: 500 11px/1 var(--display); letter-spacing: 0.18em; padding: 6px 10px; color: var(--color-text-tertiary); background: none; border: 0; }
+.lang-toggle button.on { color: rgb(var(--holo-hot)); background: rgba(var(--holo), 0.18); text-shadow: 0 0 8px rgba(var(--holo), 0.8); }
+.lang-toggle button:hover:not(.on) { color: var(--color-text-secondary); }
+@media (prefers-reduced-motion: reduce) { .friday-notice, .friday-dot { animation: none; } }
 @keyframes gate-sweep { 0%, 55% { transform: translateX(-120%) skewX(-24deg); } 100% { transform: translateX(120%) skewX(-24deg); } }
 
 /* Transcript: what you said is a chamfered plate, what Jarvis says is light on the left. */

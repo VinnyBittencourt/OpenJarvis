@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useHudMode, useHudStore, type HudMode } from '../../lib/hud';
-import { useLifeStore, type Mood } from '../../lib/life';
+import { useLang, useLifeStore, type Lang, type Mood } from '../../lib/life';
 
 // The Jarvis core, drawn on one canvas with a hand-rolled perspective projection (no 3D
 // library). Technology and sorcery share the object: a particle sphere with an engraved
@@ -12,12 +12,21 @@ type RGB = [number, number, number];
 const MODE: Record<HudMode, { rgb: RGB; spin: number; energy: number; label: string }> = {
   off: { rgb: [64, 140, 165], spin: 0.22, energy: 0.03, label: 'Escuta desligada' },
   standby: { rgb: [95, 230, 255], spin: 0.45, energy: 0.07, label: 'Em espera' },
-  listening: { rgb: [140, 240, 255], spin: 0.85, energy: 0.18, label: 'Ouvindo' },
-  capturing: { rgb: [128, 236, 255], spin: 1.15, energy: 0.28, label: 'Recebendo' },
+  // listening is violet: the particles gather in toward the heart while he talks
+  listening: { rgb: [168, 118, 255], spin: 0.85, energy: 0.18, label: 'Ouvindo' },
+  capturing: { rgb: [192, 108, 255], spin: 1.15, energy: 0.28, label: 'Recebendo' },
   thinking: { rgb: [255, 179, 71], spin: 2.6, energy: 0.26, label: 'Processando' },
   speaking: { rgb: [150, 238, 255], spin: 1.05, energy: 0.38, label: 'Falando' },
 };
 const GOLD: RGB = [255, 214, 140];
+const RED: RGB = [255, 72, 86]; // the last utterance was not understood
+// In English the resting core is mint instead of cyan, so the language shows at a glance.
+const EN_RGB: Partial<Record<HudMode, RGB>> = { off: [60, 150, 122], standby: [104, 255, 192], speaking: [150, 255, 214] };
+const LABEL_EN: Record<HudMode, string> = {
+  off: 'Listening off', standby: 'Standing by', listening: 'Listening', capturing: 'Receiving',
+  thinking: 'Processing', speaking: 'Speaking',
+};
+const baseRgb = (mode: HudMode, lang: Lang): RGB => (lang === 'en' && EN_RGB[mode]) || MODE[mode].rgb;
 // Moods tint and pace the core while it is idle; an active mode (thinking, speaking) wins.
 const MOOD: Partial<Record<Mood, { rgb: RGB; spin: number; label: string }>> = {
   worried: { rgb: [255, 128, 96], spin: 1.35, label: 'Sistema sob carga' },
@@ -125,7 +134,7 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
     }));
     const c = size / 2;
     const S = size * 0.168;
-    let raf = 0, last = 0, born = -1, angle = 0, energy = 0;
+    let raf = 0, last = 0, born = -1, angle = 0, energy = 0, gather = 0;
     let tiltX = 0.3, tiltY = 0, wantX = 0.3, wantY = 0;
     const col: RGB = [...MODE[modeRef.current].rgb];
 
@@ -162,9 +171,13 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
 
       const life = useLifeStore.getState();
       const celebrating = life.mood === 'celebrating' || life.celebrateUntil > Date.now();
-      const idle = m === 'standby' || m === 'off' || m === 'listening';
+      const idle = m === 'standby' || m === 'off';
       const moodCfg = idle ? MOOD[life.mood] : undefined;
-      const wantRgb: RGB = celebrating ? GOLD : moodCfg ? moodCfg.rgb : cfg.rgb;
+      const lang: Lang = life.status?.language ?? 'pt';
+      const unclear = useHudStore.getState().unclearUntil > Date.now();
+      const wantRgb: RGB = unclear ? RED : celebrating ? GOLD : moodCfg ? moodCfg.rgb : baseRgb(m, lang);
+      const hearing = m === 'listening' || m === 'capturing';
+      gather += ((hearing ? 1 : 0) - gather) * 0.08;
       const spin = celebrating ? Math.max(cfg.spin, 2.2) : cfg.spin * (moodCfg ? moodCfg.spin : 1);
 
       let target = cfg.energy;
@@ -175,7 +188,7 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
       if (m === 'speaking') target = 0.3 + 0.22 * Math.abs(Math.sin(t * 7.3)) + 0.18 * Math.abs(Math.sin(t * 17.1));
       if (m === 'thinking') target = 0.24 + 0.08 * Math.sin(t * 5);
       energy += (target - energy) * 0.16;
-      for (let i = 0; i < 3; i++) col[i] += (wantRgb[i] - col[i]) * 0.07;
+      for (let i = 0; i < 3; i++) col[i] += (wantRgb[i] - col[i]) * (unclear ? 0.25 : 0.07);
       const rgb = `${col[0] | 0},${col[1] | 0},${col[2] | 0}`;
       const gold = `${(col[0] * 0.35 + GOLD[0] * 0.65) | 0},${(col[1] * 0.35 + GOLD[1] * 0.65) | 0},${(col[2] * 0.35 + GOLD[2] * 0.65) | 0}`;
       angle += dt * spin * 0.55;
@@ -185,7 +198,13 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
       const ringIn = ease((boot - 0.5) / 1.3);
       const sigilIn = ease((boot - 1.0) / 1.6);
 
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, size, size);
+      if (unclear && !reduced) {
+        // a short shake, like a head shaking "no"
+        const left = (useHudStore.getState().unclearUntil - Date.now()) / 1600;
+        g.translate(Math.sin(t * 46) * 4 * Math.max(0, left - 0.45), 0);
+      }
       g.globalCompositeOperation = 'lighter';
       g.lineCap = 'round';
 
@@ -260,6 +279,18 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
       g.fillStyle = glow;
       g.fillRect(c - glowR, c - glowR, glowR * 2, glowR * 2);
 
+      // ----- Listening: rings of light converging on the heart, faster while he speaks
+      if (gather > 0.02 && !reduced) {
+        const speed = 0.55 + mic * 1.6;
+        for (let i = 0; i < 4; i++) {
+          const k = (t * speed + i / 4) % 1;
+          const rr = S * (2.5 - 1.9 * k);
+          g.strokeStyle = `rgba(${rgb},${gather * Math.sin(k * Math.PI) * 0.45})`;
+          g.lineWidth = 1 + 1.5 * k;
+          g.beginPath(); g.arc(c, c, rr, 0, Math.PI * 2); g.stroke();
+        }
+      }
+
       // ----- Wireframe heart, counter-rotating
       rot(-angle * 1.7 + tiltY, tiltX + t * 0.2);
       const sScale = (0.44 + energy * 0.22) * ease(boot / 1.4);
@@ -275,6 +306,8 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
       for (let i = 0; i < POINTS; i++) {
         const p = pts[i];
         let r = 1 + energy * 0.2 * Math.sin(p.ph + t * 3.1 + p.y * 4);
+        // listening: the sphere draws in (tighter as he speaks louder) and shimmers in bands
+        if (gather > 0.01) r *= 1 - gather * (0.2 + mic * 0.25) + gather * 0.035 * Math.sin(t * 8 + p.y * 10);
         if (m === 'speaking') r += energy * 0.14 * Math.sin(t * 9 - Math.acos(p.y) * 6);
         if (m === 'thinking') r += 0.05 * Math.sin(t * 6 + p.ph * 3);
         const k = ease((boot - p.delay) / 1.7);
@@ -432,10 +465,23 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
   }, [size, big]);
 
   const mood = useLifeStore((st) => st.mood);
+  const lang = useLang();
+  const unclearUntil = useHudStore((s) => s.unclearUntil);
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    const left = unclearUntil - Date.now();
+    if (left <= 0) return;
+    const id = window.setTimeout(() => rerender((n) => n + 1), left + 30); // drop the red label on time
+    return () => window.clearTimeout(id);
+  }, [unclearUntil]);
+  const unclear = unclearUntil > Date.now();
   const celebrating = useLifeStore((st) => st.celebrateUntil) > Date.now() || mood === 'celebrating';
   const idleNow = mode === 'standby' || mode === 'off';
-  const label = celebrating ? 'Marco alcançado' : idleNow && mode === 'standby' && MOOD[mood] ? MOOD[mood]!.label : MODE[mode].label;
-  const rgb = (celebrating ? GOLD : idleNow && MOOD[mood] ? MOOD[mood]!.rgb : MODE[mode].rgb).join(',');
+  const modeLabel = lang === 'en' ? LABEL_EN[mode] : MODE[mode].label;
+  const label = unclear ? (lang === 'en' ? 'Not understood' : 'Não entendi')
+    : celebrating ? (lang === 'en' ? 'Milestone reached' : 'Marco alcançado')
+    : idleNow && mode === 'standby' && MOOD[mood] ? MOOD[mood]!.label : modeLabel;
+  const rgb = (unclear ? RED : celebrating ? GOLD : idleNow && MOOD[mood] ? MOOD[mood]!.rgb : baseRgb(mode, lang)).join(',');
   return (
     <div className={`holo-core ${big ? 'big' : 'small'}`} data-mode={mode} data-mood={celebrating ? 'celebrating' : mood} style={{ ['--core' as string]: rgb, width: size, height: size }}>
       <canvas ref={canvasRef} style={{ width: size, height: size }} />

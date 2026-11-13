@@ -19,6 +19,8 @@ interface HudState {
   setError: (e: string | null) => void;
   greetNonce: number; // bumped when the user asks for a new chat, so the greeting is spoken again
   bumpGreet: () => void;
+  unclearUntil: number; // the last utterance was not understood: the core turns red until then
+  flagUnclear: (ms?: number) => void;
 }
 
 export const useHudStore = create<HudState>((set) => ({
@@ -34,6 +36,8 @@ export const useHudStore = create<HudState>((set) => ({
   setError: (error) => set({ error }),
   greetNonce: 0,
   bumpGreet: () => set((s) => ({ greetNonce: s.greetNonce + 1 })),
+  unclearUntil: 0,
+  flagUnclear: (ms = 1600) => set({ unclearUntil: Date.now() + ms }),
 }));
 
 /** What the orb should show right now. */

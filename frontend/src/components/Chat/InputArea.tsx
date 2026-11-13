@@ -581,6 +581,16 @@ export function InputArea() {
   ]);
   sendRef.current = sendMessage;
 
+  // Buttons elsewhere in the interface (Friday's notice) ask Jarvis something through the chat.
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (typeof text === 'string' && text.trim()) sendRef.current?.(text);
+    };
+    window.addEventListener('jarvis-ask', onAsk);
+    return () => window.removeEventListener('jarvis-ask', onAsk);
+  }, []);
+
   // The keyboard console stays folded away (voice is the main input). It opens from its
   // key, or as soon as the user starts typing anywhere on the page; Esc folds it back.
   const [consoleOpen, setConsoleOpen] = useState(false);

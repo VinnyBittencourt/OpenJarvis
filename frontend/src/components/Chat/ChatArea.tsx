@@ -12,8 +12,9 @@ import { ArcReactor } from '../Jarvis/ArcReactor';
 import { HandsFreeGate } from '../Jarvis/HandsFreeGate';
 import { useHudStore } from '../../lib/hud';
 import { fetchBriefing, type Briefing } from '../../lib/jarvis';
-import { useLifeStore } from '../../lib/life';
+import { tr, useLang, useLifeStore } from '../../lib/life';
 import { pickFiller } from '../../lib/fillers';
+import { FridayNotice, LangToggle } from '../Jarvis/FridayNotice';
 
 // The core owns the stage: as large as the viewport allows, and still large beside the
 // transcript once a conversation starts (it only shrinks on narrow windows).
@@ -203,6 +204,7 @@ export function ChatArea() {
   const handsFree = useHudStore((s) => s.active && s.wake !== 'off');
   const greetNonce = useHudStore((s) => s.greetNonce);
   const lifeStatus = useLifeStore((s) => s.status);
+  const lang = useLang();
   const [brief, setBrief] = useState<Briefing | null>(null);
   const briefedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -272,17 +274,22 @@ export function ChatArea() {
         <ArcReactor size={coreSize} />
         {isEmpty && (
           <div className="jarvis-greet">
-            <h2>{brief?.greeting ?? `${getGreetingPt()}, senhor.`}</h2>
-            <p>{brief ? `${brief.inbox}${brief.weather_alert ? ` ${brief.weather_alert}` : ''}` : 'Diga "Jarvis" e faça o pedido.'}</p>
+            <h2>{brief?.greeting ?? (lang === 'en' ? 'Hello, sir.' : `${getGreetingPt()}, senhor.`)}</h2>
+            <p>{brief && (brief.inbox || brief.weather_alert) ? `${brief.inbox}${brief.weather_alert ? ` ${brief.weather_alert}` : ''}` : tr(lang, 'Diga "Jarvis" e faça o pedido.', 'Say "Jarvis" and make your request.')}</p>
             {lifeStatus && (
               <p className="jarvis-life">
-                Dia {lifeStatus.days_together} de parceria. Nível {lifeStatus.tier_name}
-                {lifeStatus.streak > 1 ? `, ${lifeStatus.streak} dias seguidos` : ''}.
+                {lang === 'en'
+                  ? `Day ${lifeStatus.days_together} of partnership. Tier ${lifeStatus.tier_name}${lifeStatus.streak > 1 ? `, ${lifeStatus.streak} days in a row` : ''}.`
+                  : `Dia ${lifeStatus.days_together} de parceria. Nível ${lifeStatus.tier_name}${lifeStatus.streak > 1 ? `, ${lifeStatus.streak} dias seguidos` : ''}.`}
               </p>
             )}
           </div>
         )}
         <HandsFreeGate />
+        <div className="hud-row">
+          <FridayNotice />
+          <LangToggle />
+        </div>
       </div>
       <div
         ref={listRef}
