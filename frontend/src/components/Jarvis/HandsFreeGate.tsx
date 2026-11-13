@@ -4,6 +4,7 @@ import { useHudStore } from '../../lib/hud';
 import { useTtsStore } from '../../lib/tts';
 import { prefetchFillers } from '../../lib/fillers';
 import { isAppMode } from '../../lib/appmode';
+import { useSpokenAlerts } from '../../hooks/useSpokenAlerts';
 
 // One click per page load turns hands-free mode on: browsers only allow the microphone and
 // audio playback after a user gesture. After that, saying "Jarvis" is enough.
@@ -12,6 +13,7 @@ export function HandsFreeGate() {
   const error = useHudStore((s) => s.error);
   const wake = useHudStore((s) => s.wake);
   const updateSettings = useAppStore((s) => s.updateSettings);
+  useSpokenAlerts();
 
   const activate = () => {
     updateSettings({ voiceOutputEnabled: true, voiceAutoplay: true });

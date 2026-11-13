@@ -56,7 +56,7 @@ function Meter({ label, value, extra }: { label: string; value: number | null | 
 
 function GuardianTab() {
   const { data: g, failed } = usePoll<GuardianState>(fetchGuardian, 3000);
-  if (failed) return <p className="text-sm" style={muted}>Não consegui falar com a API do Jarvis. Inicie pelo INICIAR-GUI.bat.</p>;
+  if (failed) return <p className="text-sm" style={muted}>Não consegui falar com a API do Jarvis. Inicie pelo JARVIS.bat.</p>;
   if (!g) return <p className="text-sm" style={muted}>Carregando...</p>;
   const m = g.metrics || {};
   const mb = (v?: number | null) => (typeof v === 'number' ? `${(v / 1024).toFixed(1)} GB` : '');

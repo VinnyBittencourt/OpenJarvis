@@ -108,6 +108,7 @@ export function InputArea() {
 
   // Jarvis patch: a finished voice recording is sent right away instead of waiting for Enter.
   const sendRef = useRef<((spoken?: string) => void) | null>(null);
+  const interruptRef = useRef<(() => void) | null>(null);
   const inputRef = useRef('');
   inputRef.current = input;
 
@@ -126,6 +127,7 @@ export function InputArea() {
     enabled: hudActive,
     busy: streamState.isStreaming || ttsBusy,
     onCommand: (text) => sendRef.current?.(text),
+    onInterrupt: () => interruptRef.current?.(),
   });
 
   // Abort in-flight stream when the user switches models mid-generation.
@@ -187,6 +189,12 @@ export function InputArea() {
     }
     resetStream();
   }, [resetStream]);
+
+  // Jarvis patch: saying "Jarvis" over the voice stops the speech and the answer in progress.
+  interruptRef.current = () => {
+    useTtsStore.getState().stop();
+    if (useAppStore.getState().streamState.isStreaming) stopStreaming();
+  };
 
   const sendMessage = useCallback(async (spoken?: unknown) => {
     const voiceText = typeof spoken === 'string' ? spoken : '';

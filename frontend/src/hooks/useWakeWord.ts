@@ -15,6 +15,10 @@ const MIN_SPEECH_MS = 350; // shorter sounds are clicks and coughs
 const MAX_UTTERANCE_MS = 15000;
 const SESSION_MS = 120000; // open conversation: time without the wake word after each request or reply
 const PREROLL_FRAMES = 10;
+// Barge-in: while Jarvis is talking the microphone still listens, with a higher threshold, and
+// only the wake word gets through. Saying "Jarvis" stops the voice and the answer in progress.
+const BARGE_START_RMS = 0.045;
+const BARGE_MAX_MS = 5000;
 const WAKE = /(jarvis|jarvys|j[aá]rvis|javis|jarves|jarbis|garvis|jervis|zarvis|charvis|darvis)/i;
 // A first phrase may also open the conversation with a greeting instead of the name.
 const GREETING = /^[\s¡!,.]*(oi+|ol[aá]|bom dia|boa tarde|boa noite|bom noite)(?![\p{L}])/iu;
@@ -83,9 +87,12 @@ interface Options {
   enabled: boolean;
   busy: boolean; // Jarvis is thinking or speaking: ignore the microphone so it never hears itself
   onCommand: (text: string) => void;
+  onInterrupt?: () => void; // stop the voice and the answer in progress
 }
 
-export function useWakeWord({ enabled, busy, onCommand }: Options) {
+export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) {
+  const onInterruptRef = useRef(onInterrupt);
+  onInterruptRef.current = onInterrupt;
   const busyRef = useRef(busy);
   const onCommandRef = useRef(onCommand);
   const awakeUntil = useRef(0);
@@ -126,6 +133,8 @@ export function useWakeWord({ enabled, busy, onCommand }: Options) {
     let lastLoud = 0;
     let loudMs = 0;
     let lastFrameAt = 0;
+    let barge = false; // the current utterance started while Jarvis was talking
+    let bargeChecking = false;
 
     const reset = () => {
       frames = [];
@@ -179,6 +188,40 @@ export function useWakeWord({ enabled, busy, onCommand }: Options) {
       idle();
     };
 
+    // An utterance heard over Jarvis's own voice: it only counts when it has the wake word.
+    const finishBarge = async () => {
+      const captured = frames;
+      const long = loudMs >= MIN_SPEECH_MS;
+      reset();
+      barge = false;
+      if (!long || !ctx || captured.length === 0 || bargeChecking) return;
+      bargeChecking = true;
+      try {
+        const result = await transcribeAudio(encodeWav16k(captured, ctx.sampleRate), 'speech.wav');
+        const text = (result.text || '').trim();
+        const m = WAKE.exec(text);
+        if (cancelled || !m || !busyRef.current) return;
+        onInterruptRef.current?.();
+        const command = text.slice(m.index + m[0].length).replace(/^[\s,.:;!?-]+/, '').trim();
+        session.current = true;
+        awakeUntil.current = Date.now() + SESSION_MS;
+        hud.setWake('awake');
+        if (!command) {
+          if (ctx) beep(ctx);
+          return;
+        }
+        if (STOP_LISTENING.test(command)) return goodbye();
+        // give the interrupted answer a moment to close before the new request goes out
+        window.setTimeout(() => {
+          if (!cancelled) send(command);
+        }, 400);
+      } catch {
+        /* a failed barge-in check is simply ignored */
+      } finally {
+        bargeChecking = false;
+      }
+    };
+
     const finish = async () => {
       const captured = frames;
       const long = loudMs >= MIN_SPEECH_MS;
@@ -212,9 +255,36 @@ export function useWakeWord({ enabled, busy, onCommand }: Options) {
       hud.setLevel(Math.min(1, rms * 9));
 
       if (busyRef.current) {
-        reset();
-        preroll.length = 0;
+        const copyBusy = new Float32Array(input);
+        if (!inSpeech) {
+          preroll.push(copyBusy);
+          if (preroll.length > PREROLL_FRAMES) preroll.shift();
+          if (rms > BARGE_START_RMS && !bargeChecking) {
+            inSpeech = true;
+            barge = true;
+            startedAt = now;
+            lastLoud = now;
+            loudMs = 0;
+            frames = [...preroll];
+            preroll.length = 0;
+          }
+          return;
+        }
+        if (!barge) {
+          reset(); // Jarvis started talking in the middle of an utterance: drop it
+          return;
+        }
+        frames.push(copyBusy);
+        if (rms > KEEP_RMS) {
+          lastLoud = now;
+          loudMs += dt;
+        }
+        if (now - lastLoud > END_SILENCE_MS || now - startedAt > BARGE_MAX_MS) void finishBarge();
         return;
+      }
+      if (barge) {
+        // Jarvis stopped talking while the user was still speaking: treat it as a normal utterance
+        barge = false;
       }
       const current = useHudStore.getState().wake;
       if (current === 'awake' && now > awakeUntil.current) {
