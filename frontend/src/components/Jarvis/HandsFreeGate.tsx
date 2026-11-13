@@ -6,12 +6,14 @@ import { prefetchFillers } from '../../lib/fillers';
 import { isAppMode } from '../../lib/appmode';
 import { useSpokenAlerts } from '../../hooks/useSpokenAlerts';
 import { tr, useLang } from '../../lib/life';
+import { useMeetingMode } from '../../lib/meetingMode';
 
 // One click per page load turns hands-free mode on: browsers only allow the microphone and
 // audio playback after a user gesture. After that, saying "Jarvis" is enough.
 export function HandsFreeGate() {
   const active = useHudStore((s) => s.active);
   const lang = useLang();
+  const meeting = useMeetingMode((s) => s.recording);
   const error = useHudStore((s) => s.error);
   const wake = useHudStore((s) => s.wake);
   const updateSettings = useAppStore((s) => s.updateSettings);
@@ -44,6 +46,7 @@ export function HandsFreeGate() {
         <button className="hud-gate-btn" onClick={activate}>{tr(lang, 'ATIVAR JARVIS', 'ACTIVATE JARVIS')}</button>
       )}
       {!running && !error && !isAppMode() && <p>{tr(lang, 'Um clique por sessão. Depois é só dizer "Jarvis".', 'One click per session. Then just say "Jarvis".')}</p>}
+      {meeting && <p>{tr(lang, 'Em reunião: silêncio total e comandos pausados. Pare pelo botão.', 'In a meeting: total silence, commands paused. Stop with the button.')}</p>}
       {error && <p className="err">{error}</p>}
     </div>
   );

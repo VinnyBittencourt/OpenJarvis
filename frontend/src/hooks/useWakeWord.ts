@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { transcribeAudio } from '../lib/api';
 import { useHudStore } from '../lib/hud';
 import { useAppStore } from '../lib/store';
+import { meetingRecording } from '../lib/meetingMode';
 import { duckTts, useTtsStore } from '../lib/tts';
 import { playSound } from '../lib/sounds';
 import { cancelTurn, markSpeechEnd, markTranscribed } from '../lib/voiceMetrics';
@@ -348,6 +349,15 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
       let sum = 0;
       for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
       const rms = Math.sqrt(sum / input.length);
+      if (meetingRecording()) {
+        // meeting: no listening at all, not even the name; the button is the only way out
+        if (inSpeech || frames.length) reset();
+        preroll.length = 0;
+        pending = null;
+        mergeFrames = null;
+        hud.setLevel(0);
+        return;
+      }
       hud.setLevel(Math.min(1, rms * 9));
 
       if (busyRef.current) {

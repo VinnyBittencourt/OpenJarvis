@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { tr, useLang } from '../../lib/life';
 import { playSound } from '../../lib/sounds';
+import { useMeetingMode } from '../../lib/meetingMode';
+import { useTtsStore } from '../../lib/tts';
 
 // Meeting notes: one button to start and stop recording the meeting audio (Teams through the
 // PC sound plus the microphone), a timer while it records, and the result when it is ready:
@@ -10,6 +12,11 @@ interface Last { title?: string; finished?: string; summary?: string[]; my_tasks
 interface Status { state: 'idle' | 'recording' | 'processing'; elapsed?: number; title?: string; last?: Last }
 
 const SEEN_KEY = 'jarvis-meeting-seen';
+
+function applyMode(recording: boolean): void {
+  if (recording && !useMeetingMode.getState().recording) useTtsStore.getState().stop(); // silence at once
+  useMeetingMode.getState().setRecording(recording);
+}
 
 function clock(s = 0): string {
   const m = Math.floor(s / 60);
@@ -35,11 +42,12 @@ export function MeetingControl() {
           if (prev === 'processing' && data.state === 'idle') { playSound('notice'); setOpen(true); }
           prev = data.state;
           setSt(data);
+          applyMode(data.state === 'recording');
         }
       } catch {
         /* server restarting */
       }
-      timer = window.setTimeout(load, prev && prev !== 'idle' ? 2000 : 10000);
+      timer = window.setTimeout(load, prev && prev !== 'idle' ? 2000 : 5000);
     };
     void load();
     return () => window.clearTimeout(timer);
@@ -51,7 +59,11 @@ export function MeetingControl() {
       const res = await fetch(`/v1/jarvis/meeting/${path}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
       });
-      if (res.ok) setSt((await res.json()) as Status);
+      if (res.ok) {
+        const data = (await res.json()) as Status;
+        setSt(data);
+        applyMode(data.state === 'recording');
+      }
       playSound(path === 'start' ? 'wake' : 'off');
     } catch {
       /* server offline */

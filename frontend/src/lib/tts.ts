@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { synthesizeSpeech, fetchTtsHealth } from './api';
 import { toSpeakableText } from './message-text';
+import { meetingRecording } from './meetingMode'; // total silence while a meeting is recorded
 
 export type TtsState = 'idle' | 'loading' | 'speaking';
 
@@ -134,7 +135,7 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
   markAutoSpoken: (id: string) => set({ autoSpokenId: id }),
 
   speak: async (id: string, text: string) => {
-    if (!toSpeakableText(text)) return;
+    if (!toSpeakableText(text) || meetingRecording()) return;
     // Bump before teardown so a synthesis still in flight is both aborted and
     // fenced off by the token, even if the abort loses the race.
     token += 1;
@@ -145,6 +146,7 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
   },
 
   enqueueBlob: (id: string, audio: Blob) => {
+    if (meetingRecording()) return;
     if (get().speakingId !== id || !controller) {
       token += 1;
       teardown();
@@ -156,6 +158,7 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
   },
 
   enqueue: (id: string, text: string) => {
+    if (meetingRecording()) return;
     if (get().speakingId !== id || !controller) {
       token += 1;
       teardown();
