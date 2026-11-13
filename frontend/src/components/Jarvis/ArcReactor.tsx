@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useHudMode, useHudStore, type HudMode } from '../../lib/hud';
+import { useLifeStore, type Mood } from '../../lib/life';
 
 // The Jarvis core, drawn on one canvas with a hand-rolled perspective projection (no 3D
 // library). Technology and sorcery share the object: a particle sphere with an engraved
@@ -17,6 +18,13 @@ const MODE: Record<HudMode, { rgb: RGB; spin: number; energy: number; label: str
   speaking: { rgb: [150, 238, 255], spin: 1.05, energy: 0.38, label: 'Falando' },
 };
 const GOLD: RGB = [255, 214, 140];
+// Moods tint and pace the core while it is idle; an active mode (thinking, speaking) wins.
+const MOOD: Partial<Record<Mood, { rgb: RGB; spin: number; label: string }>> = {
+  worried: { rgb: [255, 128, 96], spin: 1.35, label: 'Sistema sob carga' },
+  focused: { rgb: [120, 160, 255], spin: 0.6, label: 'Modo foco' },
+  night: { rgb: [72, 150, 196], spin: 0.7, label: 'Vigília noturna' },
+  gaming: { rgb: [72, 150, 196], spin: 0.55, label: 'Discreto, em jogo' },
+};
 
 const POINTS = 820;
 const RING_SEG = 132;
@@ -152,15 +160,25 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
       const cfg = MODE[m];
       const mic = useHudStore.getState().level;
 
+      const life = useLifeStore.getState();
+      const celebrating = life.mood === 'celebrating' || life.celebrateUntil > Date.now();
+      const idle = m === 'standby' || m === 'off' || m === 'listening';
+      const moodCfg = idle ? MOOD[life.mood] : undefined;
+      const wantRgb: RGB = celebrating ? GOLD : moodCfg ? moodCfg.rgb : cfg.rgb;
+      const spin = celebrating ? Math.max(cfg.spin, 2.2) : cfg.spin * (moodCfg ? moodCfg.spin : 1);
+
       let target = cfg.energy;
+      if (m === 'standby') target += 0.035 * Math.sin(t * 0.9); // slow breathing: the core is alive at rest
+      if (idle && life.mood === 'worried') target += 0.07 * Math.abs(Math.sin(t * 11));
+      if (celebrating) target += 0.3;
       if (m === 'listening' || m === 'capturing') target += mic * 0.9;
       if (m === 'speaking') target = 0.3 + 0.22 * Math.abs(Math.sin(t * 7.3)) + 0.18 * Math.abs(Math.sin(t * 17.1));
       if (m === 'thinking') target = 0.24 + 0.08 * Math.sin(t * 5);
       energy += (target - energy) * 0.16;
-      for (let i = 0; i < 3; i++) col[i] += (cfg.rgb[i] - col[i]) * 0.07;
+      for (let i = 0; i < 3; i++) col[i] += (wantRgb[i] - col[i]) * 0.07;
       const rgb = `${col[0] | 0},${col[1] | 0},${col[2] | 0}`;
       const gold = `${(col[0] * 0.35 + GOLD[0] * 0.65) | 0},${(col[1] * 0.35 + GOLD[1] * 0.65) | 0},${(col[2] * 0.35 + GOLD[2] * 0.65) | 0}`;
-      angle += dt * cfg.spin * 0.55;
+      angle += dt * spin * 0.55;
       tiltX += (wantX - tiltX) * 0.06;
       tiltY += (wantY - tiltY) * 0.06;
       const boot = reduced ? 9 : t - born;
@@ -352,6 +370,60 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
         g.strokeStyle = `rgba(${rgb},${(i % 10 === 0 ? 0.7 : 0.26) * ringIn})`;
         seg(c + Math.cos(a) * dialR, c + Math.sin(a) * dialR, c + Math.cos(a) * (dialR - len), c + Math.sin(a) * (dialR - len));
       }
+      // ----- Layers earned with the partnership (tier 2 and up), drawn flat around the core
+      const tau = Math.PI * 2;
+      if (life.tier >= 2) {
+        g.setLineDash([2, 9]);
+        g.lineDashOffset = -t * 14;
+        g.lineWidth = 1;
+        g.strokeStyle = `rgba(${gold},0.34)`;
+        g.beginPath();
+        g.arc(c, c, S * 2.62, 0, tau);
+        g.stroke();
+        g.setLineDash([]);
+      }
+      if (life.tier >= 3) {
+        g.fillStyle = `rgba(${gold},0.8)`;
+        for (let i = 0; i < 7; i++) {
+          const a = (i / 7) * tau + t * 0.12;
+          const x = c + Math.cos(a) * S * 2.62, y = c + Math.sin(a) * S * 2.62;
+          g.beginPath();
+          g.moveTo(x, y - 4); g.lineTo(x + 3, y); g.lineTo(x, y + 4); g.lineTo(x - 3, y);
+          g.closePath();
+          g.fill();
+        }
+      }
+      if (life.tier >= 4) {
+        g.lineWidth = 1.5;
+        for (let i = 0; i < 2; i++) {
+          const a = (i ? -1 : 1) * t * 0.3 + i * Math.PI;
+          g.strokeStyle = `rgba(${gold},0.5)`;
+          g.beginPath();
+          g.arc(c, c, S * 2.78, a, a + 1.3);
+          g.stroke();
+        }
+      }
+
+      // ----- Celebration: shockwaves and sparks leaving the core
+      if (celebrating && !reduced) {
+        for (let i = 0; i < 3; i++) {
+          const k = (t * 0.45 + i / 3) % 1;
+          g.lineWidth = 1.5;
+          g.strokeStyle = `rgba(${gold},${(1 - k) * 0.55})`;
+          g.beginPath();
+          g.arc(c, c, S * (1 + k * 1.8), 0, tau);
+          g.stroke();
+        }
+        for (let i = 0; i < 54; i++) {
+          const k = (t * 0.6 + (i * 0.618034) % 1) % 1;
+          const a = i * 2.399963 + t * 0.2;
+          const r = S * (1.1 + k * 1.75);
+          const s2 = 1 + (1 - k) * 2.2;
+          g.fillStyle = `rgba(${i % 3 ? gold : '255,255,255'},${(1 - k) * 0.9})`;
+          g.fillRect(c + Math.cos(a) * r - s2 / 2, c + Math.sin(a) * r - s2 / 2, s2, s2);
+        }
+      }
+
       g.globalCompositeOperation = 'source-over';
       if (!reduced || boot < 0.1) raf = requestAnimationFrame(draw);
     };
@@ -359,11 +431,15 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
     return () => { cancelAnimationFrame(raf); window.removeEventListener('pointermove', onMove); };
   }, [size, big]);
 
-  const rgb = MODE[mode].rgb.join(',');
+  const mood = useLifeStore((st) => st.mood);
+  const celebrating = useLifeStore((st) => st.celebrateUntil) > Date.now() || mood === 'celebrating';
+  const idleNow = mode === 'standby' || mode === 'off';
+  const label = celebrating ? 'Marco alcançado' : idleNow && mode === 'standby' && MOOD[mood] ? MOOD[mood]!.label : MODE[mode].label;
+  const rgb = (celebrating ? GOLD : idleNow && MOOD[mood] ? MOOD[mood]!.rgb : MODE[mode].rgb).join(',');
   return (
-    <div className={`holo-core ${big ? 'big' : 'small'}`} data-mode={mode} style={{ ['--core' as string]: rgb, width: size, height: size }}>
+    <div className={`holo-core ${big ? 'big' : 'small'}`} data-mode={mode} data-mood={celebrating ? 'celebrating' : mood} style={{ ['--core' as string]: rgb, width: size, height: size }}>
       <canvas ref={canvasRef} style={{ width: size, height: size }} />
-      <div className="holo-state" role="status">{MODE[mode].label}</div>
+      <div className="holo-state" role="status">{label}</div>
     </div>
   );
 }

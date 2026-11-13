@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { useHudStore } from '../lib/hud';
 import { useTtsStore } from '../lib/tts';
+import { useLifeStore } from '../lib/life';
+import { playSound } from '../lib/sounds';
 
 // Things Jarvis says on his own (alerts, reminders, small talk) arrive through
 // /v1/jarvis/say. While hands-free mode is on, the interface speaks them itself, so the
@@ -18,10 +20,17 @@ export function useSpokenAlerts() {
       try {
         const res = await fetch(`/v1/jarvis/say?after=${cursor}`);
         if (!res.ok || stopped) return;
-        const data = (await res.json()) as { cursor: number; say: Array<{ id: number; text: string }> };
+        const data = (await res.json()) as { cursor: number; say: Array<{ id: number; text: string; source?: string }> };
         cursor = data.cursor;
         const tts = useTtsStore.getState();
         for (const item of data.say) {
+          if (item.source === 'milestone') {
+            // a milestone of the partnership: the core celebrates while Jarvis announces it
+            useLifeStore.getState().celebrate();
+            playSound('milestone');
+          } else {
+            playSound('alert');
+          }
           if (item.text && tts.available === true) await tts.speak(`say-${item.id}`, item.text);
         }
       } catch {

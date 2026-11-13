@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchGuardian, type GuardianState } from '../../lib/jarvis';
 import { useHudMode, useHudStore } from '../../lib/hud';
 import { useAppStore } from '../../lib/store';
+import { startLife, useLifeStore } from '../../lib/life';
 
 // Cockpit frame of the chat: two glass panes floating in perspective at the sides (live
 // telemetry on the left, voice link on the right) and a clock rail on top. Decorative only,
@@ -30,6 +31,8 @@ export function HudScene() {
   const talk = useAppStore((s) => s.messages.length > 0);
   const [now, setNow] = useState(new Date());
   const [g, setG] = useState<GuardianState | null>(null);
+  const life = useLifeStore((st) => st.status);
+  useEffect(() => startLife(), []);
 
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
@@ -57,7 +60,7 @@ export function HudScene() {
         <Gauge label="RAM" value={m.ram} />
         <Gauge label="GPU" value={m.gpu} />
         <Gauge label="VRAM" value={m.vram_total_pct as number | undefined} />
-        <p>Guardião: <em>{g?.mode ?? 'desligado'}</em></p>
+        <p>Guardião: <em>{g ? g.mode : 'sem resposta'}</em></p>
       </section>
       <section className="holo-pane right">
         <h4>Voz</h4>
@@ -65,6 +68,14 @@ export function HudScene() {
         <div className="pane-level"><i style={{ transform: `scaleX(${Math.min(1, level * 4)})` }} /></div>
         <p>Último pedido</p>
         <blockquote>{heard || 'Nenhum ainda'}</blockquote>
+        {life && (
+          <>
+            <h4 className="pane-sub">Parceria</h4>
+            <p>Dia <em>{life.days_together}</em>, sequência de <em>{life.streak}</em></p>
+            <p>Nível: <em>{life.tier_name}</em></p>
+            <p>Estado: <em>{life.mood_label}</em></p>
+          </>
+        )}
       </section>
     </div>
   );

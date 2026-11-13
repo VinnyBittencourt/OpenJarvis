@@ -6,10 +6,13 @@ import {
   type GuardianState, type SavedPrompt, type ClaudeUsage, type Notice, type SecretaryPanel,
   type MemoryFact, type VoiceMetrics, type VoiceEngine,
 } from '../lib/jarvis';
+import { useLifeStore, startLife } from '../lib/life';
+import { soundsEnabled, setSoundsEnabled, playSound } from '../lib/sounds';
 
-type Tab = 'guardian' | 'memory' | 'speed' | 'secretary' | 'usage' | 'prompts' | 'notices';
+type Tab = 'guardian' | 'life' | 'memory' | 'speed' | 'secretary' | 'usage' | 'prompts' | 'notices';
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'guardian', label: 'Guardião' },
+  { id: 'life', label: 'Parceria' },
   { id: 'memory', label: 'Memória' },
   { id: 'speed', label: 'Voz e desempenho' },
   { id: 'secretary', label: 'Sexta-feira' },
@@ -205,6 +208,60 @@ function NoticesTab() {
   );
 }
 
+function LifeTab() {
+  const life = useLifeStore((st) => st.status);
+  useEffect(() => startLife(), []);
+  if (!life) return <p className="text-sm" style={muted}>Sem resposta do servidor do Jarvis.</p>;
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          ['Dias de parceria', String(life.days_together)],
+          ['Dias seguidos', String(life.streak)],
+          ['Conversas', String(life.turns)],
+          ['Nível', life.tier_name],
+        ].map(([k, v]) => (
+          <div key={k} className="px-3 py-2 rounded-lg" style={card}>
+            <p className="text-xs" style={muted}>{k}</p>
+            <p className="text-lg" style={{ color: 'var(--color-text)' }}>{v}</p>
+          </div>
+        ))}
+      </div>
+      <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
+        {life.to_next_tier > 0
+          ? `Faltam ${life.to_next_tier} marcos para o próximo nível. Cada nível acrescenta uma camada ao núcleo.`
+          : 'Nível máximo alcançado. O núcleo está completo.'}
+      </p>
+      <div>
+        <h3 className="text-xs font-medium mb-2" style={muted}>Marcos alcançados</h3>
+        {life.achieved.length === 0 && <p className="text-sm" style={muted}>Nenhum ainda. O primeiro vem na próxima conversa.</p>}
+        <div className="space-y-2">
+          {life.achieved.map((m) => (
+            <div key={m.id} className="flex justify-between px-3 py-2 rounded-lg text-sm" style={{ ...card, color: 'var(--color-text)' }}>
+              <span>{m.title}</span><span style={muted}>{m.date.split('-').reverse().join('/')}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+      {life.next.length > 0 && (
+        <div>
+          <h3 className="text-xs font-medium mb-2" style={muted}>Próximos</h3>
+          <div className="space-y-2">
+            {life.next.map((m) => (
+              <div key={m.id} className="px-3 py-2 rounded-lg text-sm" style={{ ...card, color: 'var(--color-text-secondary)' }}>
+                <div className="flex justify-between"><span>{m.title}</span><span>{m.progress} de {m.goal}</span></div>
+                <div className="h-1 mt-2 rounded" style={{ background: 'var(--color-border)' }}>
+                  <div className="h-1 rounded" style={{ width: `${Math.round((m.progress / m.goal) * 100)}%`, background: 'var(--color-accent)' }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MemoryTab() {
   const [facts, setFacts] = useState<MemoryFact[] | null>(null);
   const [note, setNote] = useState('');
@@ -247,6 +304,7 @@ const seconds = (ms: number | null | undefined) => (ms == null ? 'sem dados' : `
 function SpeedTab() {
   const { data: metrics } = usePoll<VoiceMetrics>(fetchVoiceMetrics, 5000);
   const [voice, setVoice] = useState<VoiceEngine | null>(null);
+  const [sounds, setSounds] = useState(soundsEnabled());
   useEffect(() => { fetchVoiceEngine().then(setVoice).catch(() => setVoice(null)); }, []);
   const choose = (engine: 'piper' | 'kokoro') => setVoiceEngine(engine).then(setVoice).catch(() => {});
   return (
@@ -281,6 +339,13 @@ function SpeedTab() {
         ) : <p className="text-sm" style={muted}>Sem resposta do servidor.</p>}
         <p className="text-xs mt-2" style={muted}>A troca vale a partir da próxima frase.</p>
       </div>
+      <div>
+        <h3 className="text-xs font-medium mb-2" style={muted}>Sons da interface</h3>
+        <button onClick={() => { setSoundsEnabled(!sounds); setSounds(!sounds); if (!sounds) playSound('wake'); }}
+          className="px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer" style={{ ...card, color: sounds ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}>
+          {sounds ? 'Ligados' : 'Desligados'}
+        </button>
+      </div>
     </div>
   );
 }
@@ -303,6 +368,7 @@ export function SystemPage() {
           ))}
         </div>
         {tab === 'guardian' && <GuardianTab />}
+        {tab === 'life' && <LifeTab />}
         {tab === 'memory' && <MemoryTab />}
         {tab === 'speed' && <SpeedTab />}
         {tab === 'secretary' && <SecretaryTab />}

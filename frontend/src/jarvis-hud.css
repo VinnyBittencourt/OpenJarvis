@@ -349,3 +349,10 @@ html.jarvis-hud .holo-input.open { animation: reply-in 380ms cubic-bezier(.2, .8
 @media (prefers-reduced-motion: reduce) {
   html.jarvis-hud *, html.jarvis-hud *::before, html.jarvis-hud *::after { animation: none !important; transition: none !important; }
 }
+
+/* ----- Life: moods, partnership line and pane ----- */
+.jarvis-life { margin-top: 10px; font-size: 12px; letter-spacing: 0.08em; color: rgba(255, 214, 140, 0.85); text-shadow: 0 0 10px rgba(255, 214, 140, 0.35); }
+.holo-pane h4.pane-sub { margin-top: 12px; }
+.holo-core[data-mood='celebrating'] canvas { filter: drop-shadow(0 0 14px rgba(255, 214, 140, 0.75)); }
+.holo-core[data-mood='worried'] .holo-state { color: rgb(255, 150, 120); }
+.holo-core[data-mood='celebrating'] .holo-state { color: rgb(255, 214, 140); letter-spacing: 0.34em; }

@@ -24,6 +24,9 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
+      // Jarvis patch: the desktop app is always served locally, so a cached copy only gets in
+      // the way (an old interface kept showing after updates). This removes any installed worker.
+      selfDestroying: true,
       manifest: {
         name: 'OpenJarvis',
         short_name: 'Jarvis',

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { transcribeAudio } from '../lib/api';
 import { useHudStore } from '../lib/hud';
 import { useTtsStore } from '../lib/tts';
+import { playSound } from '../lib/sounds';
 import { cancelTurn, markSpeechEnd, markTranscribed } from '../lib/voiceMetrics';
 
 // Hands-free listening. The microphone is analysed in the browser, every utterance is
@@ -17,7 +18,7 @@ const SESSION_MS = 120000; // open conversation: time without the wake word afte
 const PREROLL_FRAMES = 10;
 // Barge-in: while Jarvis is talking the microphone still listens, with a higher threshold, and
 // only the wake word gets through. Saying "Jarvis" stops the voice and the answer in progress.
-const BARGE_START_RMS = 0.045;
+const BARGE_START_RMS = 0.03;
 const BARGE_MAX_MS = 5000;
 const WAKE = /(jarvis|jarvys|j[aá]rvis|javis|jarves|jarbis|garvis|jervis|zarvis|charvis|darvis)/i;
 // A first phrase may also open the conversation with a greeting instead of the name.
@@ -65,22 +66,6 @@ function encodeWav16k(frames: Float32Array[], sampleRate: number): Blob {
   view.setUint32(40, pcm.length * 2, true);
   new Int16Array(buf, 44).set(pcm);
   return new Blob([buf], { type: 'audio/wav' });
-}
-
-function beep(ctx: AudioContext) {
-  try {
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.16);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.18);
-  } catch {
-    /* the chime is optional */
-  }
 }
 
 interface Options {
@@ -143,6 +128,7 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
     };
 
     const send = (command: string) => {
+      playSound('sent');
       hud.setHeard(command);
       session.current = true;
       awakeUntil.current = Date.now() + SESSION_MS;
@@ -152,6 +138,7 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
 
     const goodbye = () => {
       cancelTurn();
+      playSound('off');
       session.current = false;
       awakeUntil.current = 0;
       const tts = useTtsStore.getState();
@@ -181,7 +168,7 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
         session.current = true;
         awakeUntil.current = Date.now() + SESSION_MS;
         hud.setWake('awake');
-        if (ctx) beep(ctx);
+        playSound('wake');
         return;
       }
       if (GREETING.test(text)) return send(text);
@@ -200,16 +187,20 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
         const result = await transcribeAudio(encodeWav16k(captured, ctx.sampleRate), 'speech.wav');
         const text = (result.text || '').trim();
         const m = WAKE.exec(text);
-        if (cancelled || !m || !busyRef.current) return;
+        if (cancelled) return;
+        if (!busyRef.current) {
+          // Jarvis finished talking while this was being transcribed: an ordinary utterance
+          handleText(text);
+          return;
+        }
+        if (!m) return;
+        playSound('interrupt');
         onInterruptRef.current?.();
         const command = text.slice(m.index + m[0].length).replace(/^[\s,.:;!?-]+/, '').trim();
         session.current = true;
         awakeUntil.current = Date.now() + SESSION_MS;
         hud.setWake('awake');
-        if (!command) {
-          if (ctx) beep(ctx);
-          return;
-        }
+        if (!command) return;
         if (STOP_LISTENING.test(command)) return goodbye();
         // give the interrupted answer a moment to close before the new request goes out
         window.setTimeout(() => {
