@@ -15,6 +15,7 @@ import { fetchBriefing, type Briefing } from '../../lib/jarvis';
 import { tr, useLang, useLifeStore } from '../../lib/life';
 import { pickFiller } from '../../lib/fillers';
 import { FridayNotice, LangToggle } from '../Jarvis/FridayNotice';
+import { MeetingControl } from '../Jarvis/MeetingControl';
 
 // The core owns the stage: as large as the viewport allows, and still large beside the
 // transcript once a conversation starts (it only shrinks on narrow windows).
@@ -288,6 +289,7 @@ export function ChatArea() {
         <HandsFreeGate />
         <div className="hud-row">
           <FridayNotice />
+          <MeetingControl />
           <LangToggle />
         </div>
       </div>
