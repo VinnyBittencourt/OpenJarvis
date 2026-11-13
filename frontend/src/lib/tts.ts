@@ -45,6 +45,14 @@ interface Chunk { blob: Promise<Blob> }
 let queue: Chunk[] = [];
 let synthChain: Promise<unknown> = Promise.resolve();
 let running = false;
+// Jarvis patch: the voice drops to a murmur while the user may be interrupting, so the
+// microphone hears him clearly; it comes back if it was not an interruption.
+let volume = 1;
+
+export function duckTts(on: boolean): void {
+  volume = on ? 0.2 : 1;
+  if (audio) audio.volume = volume;
+}
 
 /** Split text into sentence-sized pieces; very short pieces ride along with the next one. */
 export function splitSentences(text: string): string[] {
@@ -76,6 +84,7 @@ export function shouldAutoplayFinishedReply(
 }
 
 function teardown(): void {
+  volume = 1; // a new utterance always starts at full volume
   if (audio) {
     // Detach first: clearing src re-runs the media load algorithm, which fails
     // on an empty source and dispatches an `error` event. With the handler
@@ -196,6 +205,7 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
         const url = URL.createObjectURL(data);
         objectUrl = url;
         const el = new Audio(url);
+        el.volume = volume;
         audio = el;
         el.onended = () => { void next(); };
         el.onerror = () => fail(new Error('Playback failed'));
@@ -210,6 +220,7 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
 
   stop: () => {
     token += 1;
+    volume = 1;
     teardown();
     set({ state: 'idle', speakingId: null, error: null, errorId: null });
   },

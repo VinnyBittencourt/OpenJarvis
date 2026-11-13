@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { transcribeAudio } from '../lib/api';
 import { useHudStore } from '../lib/hud';
 import { useAppStore } from '../lib/store';
-import { useTtsStore } from '../lib/tts';
+import { duckTts, useTtsStore } from '../lib/tts';
 import { playSound } from '../lib/sounds';
 import { cancelTurn, markSpeechEnd, markTranscribed } from '../lib/voiceMetrics';
 
@@ -21,8 +21,11 @@ const SESSION_MS = 120000; // open conversation: time without the wake word afte
 const PREROLL_FRAMES = 10;
 // Barge-in: while Jarvis is talking the microphone still listens, with a higher threshold, and
 // only the wake word gets through. Saying "Jarvis" stops the voice and the answer in progress.
-const BARGE_START_RMS = 0.03;
-const BARGE_MAX_MS = 5000;
+// The browser's echo cancellation lowers his voice while Jarvis talks, so the bar is low and the
+// check is quick: "Jarvis" comes first, two seconds are enough.
+const BARGE_START_RMS = 0.025;
+const DUCK_AFTER_MS = 300; // sustained voice before Jarvis lowers his own
+const BARGE_MAX_MS = 2200;
 const WAKE = /(jarvis|jarvys|j[aá]rvis|javis|jarves|jarbis|garvis|jervis|zarvis|charvis|darvis)/i;
 // A first phrase may also open the conversation with a greeting instead of the name.
 const GREETING = /^[\s¡!,.]*(oi+|ol[aá]|bom dia|boa tarde|boa noite|bom noite)(?![\p{L}])/iu;
@@ -37,6 +40,13 @@ const SHUTDOWN =
   /^(?:(?:por favor|please)[\s,]*)?(?:deslig(?:ue|a|ar)(?: (?:a escuta|tudo|agora))?|estou ocupad[oa]|t[oô] ocupad[oa]|(?:i'?m|i am) busy|shut ?down|turn off)(?:[\s,]+(?:por favor|agora|please|now))*[\s.!]*$/iu;
 // Text Whisper invents out of silence or background noise; never treated as a request.
 const NOISE = /^(obrigad[oa]\.?|tchau\.?|legendas? .*|.*amara\.org.*|e a[ií]\.?|\.+|m+h*m*\.?|h[uã]m+\.?)$/i;
+
+/** Voice diagnostics written to jarvis-setup/logs/frontend.log (read by Claude when something fails). */
+function debugLog(kind: string, data: Record<string, unknown>): void {
+  void fetch('/v1/jarvis/debug', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, ...data }),
+  }).catch(() => {});
+}
 
 function encodeWav16k(frames: Float32Array[], sampleRate: number): Blob {
   const total = frames.reduce((n, f) => n + f.length, 0);
@@ -128,6 +138,8 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
     let loudMs = 0;
     let lastFrameAt = 0;
     let barge = false; // the current utterance started while Jarvis was talking
+    let ducked = false;
+    let duckBlocked = false; // a false alarm in this reply (echo of his own voice): stop ducking until it ends
     let bargeChecking = false;
     // Pause in the middle of a sentence: the first part is held so the rest can join it.
     let pending: { frames: Float32Array[]; endedAt: number } | null = null;
@@ -249,21 +261,35 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
     const finishBarge = async () => {
       const captured = frames;
       const long = loudMs >= MIN_SPEECH_MS;
+      const ms = Date.now() - startedAt;
+      const wasDucked = ducked;
+      ducked = false;
       reset();
       barge = false;
-      if (!long || !ctx || captured.length === 0 || bargeChecking) return;
+      if (!long || !ctx || captured.length === 0 || bargeChecking) {
+        duckTts(false);
+        return;
+      }
       bargeChecking = true;
       try {
         const result = await transcribeAudio(encodeWav16k(captured, ctx.sampleRate), 'speech.wav');
+        // even when the guard marks it unclear (his voice over Jarvis's), the text may hold the name
         const text = (result.text || '').trim();
         const m = WAKE.exec(text);
+        debugLog('barge', { ms, text, matched: !!m, unclear: result.language === 'unclear', busy: busyRef.current });
         if (cancelled) return;
         if (!busyRef.current) {
+          duckTts(false);
           // Jarvis finished talking while this was being transcribed: an ordinary utterance
-          handleText(text);
+          handleText(text, result.language === 'unclear');
           return;
         }
-        if (!m) return;
+        if (!m) {
+          duckTts(false);
+          if (wasDucked) duckBlocked = true;
+          return;
+        }
+        duckTts(false);
         playSound('interrupt');
         onInterruptRef.current?.();
         const command = text.slice(m.index + m[0].length).replace(/^[\s,.:;!?-]+/, '').trim();
@@ -279,7 +305,7 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
           if (!cancelled) send(command);
         }, 400);
       } catch {
-        /* a failed barge-in check is simply ignored */
+        duckTts(false); /* a failed barge-in check is simply ignored */
       } finally {
         bargeChecking = false;
       }
@@ -349,12 +375,21 @@ export function useWakeWord({ enabled, busy, onCommand, onInterrupt }: Options) 
           lastLoud = now;
           loudMs += dt;
         }
+        if (!ducked && !duckBlocked && loudMs >= DUCK_AFTER_MS) {
+          ducked = true;
+          duckTts(true); // he may be interrupting: lower the voice so the microphone hears him
+        }
         if (now - lastLoud > END_SILENCE_MS || now - startedAt > BARGE_MAX_MS) void finishBarge();
         return;
       }
       if (barge) {
         // Jarvis stopped talking while the user was still speaking: treat it as a normal utterance
         barge = false;
+      }
+      if (ducked || duckBlocked) {
+        ducked = false;
+        duckBlocked = false;
+        duckTts(false);
       }
       const current = useHudStore.getState().wake;
       if (current === 'awake' && now > awakeUntil.current) {

@@ -12,9 +12,9 @@ type RGB = [number, number, number];
 const MODE: Record<HudMode, { rgb: RGB; spin: number; energy: number; label: string }> = {
   off: { rgb: [64, 140, 165], spin: 0.22, energy: 0.03, label: 'Escuta desligada' },
   standby: { rgb: [95, 230, 255], spin: 0.45, energy: 0.07, label: 'Em espera' },
-  // listening is violet: the particles gather in toward the heart while he talks
-  listening: { rgb: [168, 118, 255], spin: 0.85, energy: 0.18, label: 'Ouvindo' },
-  capturing: { rgb: [192, 108, 255], spin: 1.15, energy: 0.28, label: 'Recebendo' },
+  // listening is a blue violet leaning toward green (14/11): the particles gather in gently while he talks
+  listening: { rgb: [118, 146, 255], spin: 0.85, energy: 0.18, label: 'Ouvindo' },
+  capturing: { rgb: [124, 158, 255], spin: 1.0, energy: 0.24, label: 'Recebendo' },
   thinking: { rgb: [255, 179, 71], spin: 2.6, energy: 0.26, label: 'Processando' },
   speaking: { rgb: [150, 238, 255], spin: 1.05, energy: 0.38, label: 'Falando' },
 };
@@ -184,7 +184,7 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
       if (m === 'standby') target += 0.035 * Math.sin(t * 0.9); // slow breathing: the core is alive at rest
       if (idle && life.mood === 'worried') target += 0.07 * Math.abs(Math.sin(t * 11));
       if (celebrating) target += 0.3;
-      if (m === 'listening' || m === 'capturing') target += mic * 0.9;
+      if (m === 'listening' || m === 'capturing') target += mic * 0.45;
       if (m === 'speaking') target = 0.3 + 0.22 * Math.abs(Math.sin(t * 7.3)) + 0.18 * Math.abs(Math.sin(t * 17.1));
       if (m === 'thinking') target = 0.24 + 0.08 * Math.sin(t * 5);
       energy += (target - energy) * 0.16;
@@ -279,14 +279,14 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
       g.fillStyle = glow;
       g.fillRect(c - glowR, c - glowR, glowR * 2, glowR * 2);
 
-      // ----- Listening: rings of light converging on the heart, faster while he speaks
+      // ----- Listening: two faint rings drifting in toward the heart, slow and calm (subtle on purpose)
       if (gather > 0.02 && !reduced) {
-        const speed = 0.55 + mic * 1.6;
-        for (let i = 0; i < 4; i++) {
-          const k = (t * speed + i / 4) % 1;
-          const rr = S * (2.5 - 1.9 * k);
-          g.strokeStyle = `rgba(${rgb},${gather * Math.sin(k * Math.PI) * 0.45})`;
-          g.lineWidth = 1 + 1.5 * k;
+        const speed = 0.16 + mic * 0.12;
+        for (let i = 0; i < 2; i++) {
+          const k = (t * speed + i / 2) % 1;
+          const rr = S * (2.2 - 1.2 * k);
+          g.strokeStyle = `rgba(${rgb},${gather * Math.sin(k * Math.PI) * 0.1})`;
+          g.lineWidth = 0.8;
           g.beginPath(); g.arc(c, c, rr, 0, Math.PI * 2); g.stroke();
         }
       }
@@ -307,7 +307,7 @@ export function ArcReactor({ size = 340 }: { size?: number }) {
         const p = pts[i];
         let r = 1 + energy * 0.2 * Math.sin(p.ph + t * 3.1 + p.y * 4);
         // listening: the sphere draws in (tighter as he speaks louder) and shimmers in bands
-        if (gather > 0.01) r *= 1 - gather * (0.2 + mic * 0.25) + gather * 0.035 * Math.sin(t * 8 + p.y * 10);
+        if (gather > 0.01) r *= 1 - gather * (0.07 + mic * 0.1) + gather * 0.012 * Math.sin(t * 3 + p.y * 6);
         if (m === 'speaking') r += energy * 0.14 * Math.sin(t * 9 - Math.acos(p.y) * 6);
         if (m === 'thinking') r += 0.05 * Math.sin(t * 6 + p.ph * 3);
         const k = ease((boot - p.delay) / 1.7);
