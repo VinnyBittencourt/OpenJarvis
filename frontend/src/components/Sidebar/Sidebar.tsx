@@ -16,10 +16,12 @@ import {
   Monitor,
   Loader2,
   ScrollText,
+  Activity,
   Database,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
+import { useHudStore } from '../../lib/hud';
 
 export function Sidebar() {
   const navigate = useNavigate();
@@ -44,6 +46,7 @@ export function Sidebar() {
   const messages = useAppStore((s) => s.messages);
   const handleNewChat = () => {
     // Don't create a new chat if the current one is empty
+    useHudStore.getState().bumpGreet();
     if (messages.length === 0) {
       navigate('/');
       return;
@@ -57,6 +60,7 @@ export function Sidebar() {
     { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
     { path: '/data-sources', icon: Database, label: 'Data Sources' },
     { path: '/agents', icon: Bot, label: 'Agents' },
+    { path: '/system', icon: Activity, label: 'System' },
     { path: '/logs', icon: ScrollText, label: 'Logs' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/get-started', icon: Rocket, label: 'Get Started' },
@@ -68,7 +72,7 @@ export function Sidebar() {
       {!sidebarOpen && (
         <button
           onClick={toggleSidebar}
-          className="fixed top-3 left-3 z-30 p-2 rounded-lg transition-colors cursor-pointer"
+          className="oj-open-sidebar fixed top-3 left-3 z-30 p-2 rounded-lg transition-colors cursor-pointer"
           style={{ color: 'var(--color-text-secondary)', background: 'var(--color-bg-secondary)' }}
           onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
           onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--color-bg-secondary)')}

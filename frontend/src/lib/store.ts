@@ -267,6 +267,11 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set, get) => {
   const initial = loadConversations();
+  // Jarvis patch: the app always opens on a new conversation; older ones stay in the history.
+  if (initial.activeId) {
+    initial.activeId = null;
+    saveConversations(initial);
+  }
   const convList = Object.values(initial.conversations).sort(
     (a, b) => b.updatedAt - a.updatedAt,
   );
@@ -290,7 +295,7 @@ export const useAppStore = create<AppState>((set, get) => {
 
     commandPaletteOpen: false,
     sidebarOpen: true,
-    systemPanelOpen: true,
+    systemPanelOpen: false, // Jarvis HUD shows its own side panels
 
     optInEnabled: localStorage.getItem(OPTIN_KEY) === 'true',
     optInDisplayName: localStorage.getItem(OPTIN_NAME_KEY) || '',

@@ -119,7 +119,7 @@ export function MessageBubble({ message, isLive = false }: Props) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-4 holo-user">
         <div
           className="max-w-[85%] px-4 py-2.5 text-sm leading-relaxed"
           style={{
@@ -137,7 +137,7 @@ export function MessageBubble({ message, isLive = false }: Props) {
   }
 
   return (
-    <div className="group mb-6">
+    <div className="group mb-6 holo-reply">
       {/* Deep Research timeline (steps + status) */}
       {(message.isResearch || (message.researchTraces && message.researchTraces.length > 0)) && (
         <ResearchTimeline

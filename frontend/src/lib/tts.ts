@@ -23,6 +23,10 @@ interface TtsStore {
   /** Last message spoken by autoplay, so a re-render never repeats it. */
   autoSpokenId: string | null;
   speak: (id: string, text: string) => Promise<void>;
+  /** Add more text to the utterance of `id` (starts one if needed). Used to speak a reply while it is still being written. */
+  enqueue: (id: string, text: string) => void;
+  /** Play already synthesized audio as part of the utterance of `id` (cached acknowledgements). */
+  enqueueBlob: (id: string, audio: Blob) => void;
   stop: () => void;
   ensureHealth: () => Promise<void>;
   markAutoSpoken: (id: string) => void;
@@ -35,6 +39,25 @@ let objectUrl: string | null = null;
 let controller: AbortController | null = null;
 let token = 0;
 let healthProbe: Promise<void> | null = null;
+// Sentence queue: a reply is synthesized and played one sentence at a time, so the voice
+// starts after the first sentence is ready instead of after the whole reply.
+interface Chunk { blob: Promise<Blob> }
+let queue: Chunk[] = [];
+let synthChain: Promise<unknown> = Promise.resolve();
+let running = false;
+
+/** Split text into sentence-sized pieces; very short pieces ride along with the next one. */
+export function splitSentences(text: string): string[] {
+  const parts = text.split(/(?<=[.!?…:])\s+|\n+/).map((p) => p.trim()).filter(Boolean);
+  const out: string[] = [];
+  let carry = '';
+  for (const p of parts) {
+    carry = carry ? `${carry} ${p}` : p;
+    if (carry.length >= 28) { out.push(carry); carry = ''; }
+  }
+  if (carry) out.push(carry);
+  return out;
+}
 
 /** Only a stream ending in the active conversation may trigger autoplay. */
 export function shouldAutoplayFinishedReply(
@@ -72,6 +95,9 @@ function teardown(): void {
     controller.abort();
     controller = null;
   }
+  queue = [];
+  running = false;
+  synthChain = Promise.resolve();
 }
 
 export const useTtsStore = create<TtsStore>((set, get) => ({
@@ -99,42 +125,52 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
   markAutoSpoken: (id: string) => set({ autoSpokenId: id }),
 
   speak: async (id: string, text: string) => {
-    const trimmed = toSpeakableText(text);
-    if (!trimmed) return;
-
+    if (!toSpeakableText(text)) return;
     // Bump before teardown so a synthesis still in flight is both aborted and
     // fenced off by the token, even if the abort loses the race.
     token += 1;
-    const mine = token;
     teardown();
+    controller = new AbortController();
     set({ state: 'loading', speakingId: id, error: null, errorId: null });
+    get().enqueue(id, text);
+  },
 
-    const ac = new AbortController();
-    controller = ac;
+  enqueueBlob: (id: string, audio: Blob) => {
+    if (get().speakingId !== id || !controller) {
+      token += 1;
+      teardown();
+      controller = new AbortController();
+      set({ state: 'loading', speakingId: id, error: null, errorId: null });
+    }
+    queue.push({ blob: Promise.resolve(audio) });
+    get().enqueue(id, '');
+  },
 
-    try {
-      const blob = await synthesizeSpeech(trimmed, { signal: ac.signal });
-      if (mine !== token) return;
+  enqueue: (id: string, text: string) => {
+    if (get().speakingId !== id || !controller) {
+      token += 1;
+      teardown();
+      controller = new AbortController();
+      set({ state: 'loading', speakingId: id, error: null, errorId: null });
+    }
+    const mine = token;
+    const signal = controller!.signal;
+    for (const sentence of splitSentences(text)) {
+      const speakable = toSpeakableText(sentence);
+      if (!speakable) continue;
+      // Synthesize one sentence at a time, in order, ahead of playback.
+      const blob = synthChain.then(() => synthesizeSpeech(speakable, { signal }));
+      synthChain = blob.catch(() => undefined);
+      queue.push({ blob });
+    }
+    if (running) return;
+    if (queue.length === 0) {
+      set({ state: 'idle', speakingId: null });
+      return;
+    }
+    running = true;
 
-      const url = URL.createObjectURL(blob);
-      objectUrl = url;
-      const el = new Audio(url);
-      audio = el;
-
-      el.onended = () => {
-        if (mine !== token) return;
-        teardown();
-        set({ state: 'idle', speakingId: null });
-      };
-      el.onerror = () => {
-        if (mine !== token) return;
-        teardown();
-        set({ state: 'idle', speakingId: null, error: 'Playback failed', errorId: id });
-      };
-
-      await el.play();
-      if (mine === token) set({ state: 'speaking', speakingId: id });
-    } catch (err) {
+    const fail = (err: unknown) => {
       if (mine !== token) return;
       if (err instanceof DOMException && err.name === 'AbortError') return;
       teardown();
@@ -144,7 +180,32 @@ export const useTtsStore = create<TtsStore>((set, get) => ({
         error: err instanceof Error ? err.message : 'Speech synthesis failed',
         errorId: id,
       });
-    }
+    };
+    const next = async (): Promise<void> => {
+      if (mine !== token) return;
+      const chunk = queue.shift();
+      if (!chunk) {
+        running = false;
+        set({ state: 'idle', speakingId: null });
+        return;
+      }
+      try {
+        const data = await chunk.blob;
+        if (mine !== token) return;
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        const url = URL.createObjectURL(data);
+        objectUrl = url;
+        const el = new Audio(url);
+        audio = el;
+        el.onended = () => { void next(); };
+        el.onerror = () => fail(new Error('Playback failed'));
+        await el.play();
+        if (mine === token) set({ state: 'speaking', speakingId: id });
+      } catch (err) {
+        fail(err);
+      }
+    };
+    void next();
   },
 
   stop: () => {

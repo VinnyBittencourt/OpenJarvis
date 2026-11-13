@@ -12,6 +12,9 @@ import {
 } from '../../lib/chat-telemetry';
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
+import { useWakeWord } from '../../hooks/useWakeWord';
+import { useHudStore } from '../../lib/hud';
+import { useTtsStore } from '../../lib/tts';
 import type {
   ChatMessage,
   MessageTelemetry,
@@ -103,13 +106,27 @@ export function InputArea() {
   const corpusSync = useResearchCorpusSync(deepResearch);
   const isCurrentChatStreaming = streamState.isStreaming && streamState.conversationId === activeId;
 
+  // Jarvis patch: a finished voice recording is sent right away instead of waiting for Enter.
+  const sendRef = useRef<((spoken?: string) => void) | null>(null);
+  const inputRef = useRef('');
+  inputRef.current = input;
+
   const {
     state: speechState,
     error: speechError,
     available: speechAvailable,
     startRecording,
     stopRecording,
-  } = useSpeech();
+  } = useSpeech((text) => sendRef.current?.(text));
+
+  // Jarvis patch: hands-free mode. Saying "Jarvis ..." sends the request without touching the mic button.
+  const hudActive = useHudStore((s) => s.active);
+  const ttsBusy = useTtsStore((s) => s.state !== 'idle');
+  useWakeWord({
+    enabled: hudActive,
+    busy: streamState.isStreaming || ttsBusy,
+    onCommand: (text) => sendRef.current?.(text),
+  });
 
   // Abort in-flight stream when the user switches models mid-generation.
   // This prevents errors from trying to continue a stream with a stale model.
@@ -145,7 +162,7 @@ export function InputArea() {
       try {
         const text = await stopRecording();
         if (text) {
-          setInput((prev) => (prev ? prev + ' ' + text : text));
+          sendRef.current?.(text);
         }
       } catch {
         // Error is captured in useSpeech
@@ -171,8 +188,9 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
-  const sendMessage = useCallback(async () => {
-    const content = input.trim();
+  const sendMessage = useCallback(async (spoken?: unknown) => {
+    const voiceText = typeof spoken === 'string' ? spoken : '';
+    const content = (voiceText ? `${inputRef.current} ${voiceText}` : input).trim();
     if (!content || streamState.isStreaming) return;
     if (!selectedModel) {
       toast.error('Pick a model first (⌘K)');
@@ -553,8 +571,33 @@ export function InputArea() {
     temperature,
     maxTokens,
   ]);
+  sendRef.current = sendMessage;
+
+  // The keyboard console stays folded away (voice is the main input). It opens from its
+  // key, or as soon as the user starts typing anywhere on the page; Esc folds it back.
+  const [consoleOpen, setConsoleOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (consoleOpen || e.ctrlKey || e.metaKey || e.altKey || e.key.length !== 1) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      e.preventDefault();
+      setInput((v) => v + e.key);
+      setConsoleOpen(true);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [consoleOpen]);
+  useEffect(() => {
+    if (consoleOpen) textareaRef.current?.focus();
+  }, [consoleOpen]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setConsoleOpen(false);
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -562,7 +605,10 @@ export function InputArea() {
   };
 
   return (
-    <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
+    <div className={`holo-input ${consoleOpen ? 'open' : 'closed'} px-4 pb-4 pt-2`} style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
+      <button type="button" className="holo-keys" onClick={() => setConsoleOpen(!consoleOpen)} aria-expanded={consoleOpen}>
+        {consoleOpen ? 'Fechar teclado' : 'Teclado'}
+      </button>
       <div className="mb-2 flex flex-col gap-1">
         <div className="flex items-center gap-2">
           <button
@@ -596,7 +642,7 @@ export function InputArea() {
         )}
       </div>
       <div
-        className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
+        className="holo-console flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
         style={{
           background: 'var(--color-input-bg)',
           border: '1px solid var(--color-input-border)',
@@ -608,7 +654,7 @@ export function InputArea() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={selectedModel ? 'Message OpenJarvis...' : 'Pick a model first (⌘K)...'}
+          placeholder={selectedModel ? 'Diga "Jarvis" ou escreva o pedido' : 'Escolha um modelo primeiro (Ctrl+K)'}
           rows={1}
           className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed"
           style={{ color: 'var(--color-text)', maxHeight: '200px' }}

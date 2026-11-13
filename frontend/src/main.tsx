@@ -8,6 +8,14 @@ import App from './App';
 import { initApiBase } from './lib/api';
 import { initAnalytics } from './lib/analytics';
 import './index.css';
+import './jarvis-hud.css';
+
+// Jarvis HUD theme is on by default; run localStorage.setItem('jarvis-hud', '0') to turn it off.
+try {
+  if (localStorage.getItem('jarvis-hud') !== '0') document.documentElement.classList.add('jarvis-hud');
+} catch {
+  document.documentElement.classList.add('jarvis-hud');
+}
 
 function applyTheme() {
   try {

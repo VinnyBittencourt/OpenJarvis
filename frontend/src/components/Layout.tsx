@@ -3,6 +3,10 @@ import { Outlet, useNavigate } from 'react-router';
 import { ApprovalBell } from './ApprovalBell';
 import { Sidebar } from './Sidebar/Sidebar';
 import { SystemPulse } from './SystemPulse';
+import { GuardianChip } from './GuardianChip';
+import { HoloBackdrop } from './Jarvis/HoloBackdrop';
+import { BootSequence } from './Jarvis/BootSequence';
+import { HoloDock } from './Jarvis/HoloDock';
 import { useAppStore } from '../lib/store';
 import { checkHealth } from '../lib/api';
 
@@ -27,7 +31,11 @@ export function Layout() {
   return (
     <div className="flex flex-col h-full w-full overflow-hidden relative" style={{ paddingTop: '3px' }}>
       <div className="hud-backdrop" aria-hidden="true" />
+      <HoloBackdrop />
+      <BootSequence />
+      <HoloDock />
       <SystemPulse apiReachable={apiReachable} />
+      <GuardianChip />
       <ApprovalBell />
 
       {/* Health check banner */}
@@ -59,7 +67,7 @@ export function Layout() {
         <Sidebar />
         {sidebarOpen && (
           <div
-            className="fixed inset-0 z-20 bg-black/40 md:hidden"
+            className="holo-scrim fixed inset-0 z-20 bg-black/40 md:hidden"
             onClick={() => useAppStore.getState().setSidebarOpen(false)}
           />
         )}

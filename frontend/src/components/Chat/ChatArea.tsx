@@ -6,8 +6,35 @@ import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
 import { shouldAutoplayFinishedReply, useTtsStore } from '../../lib/tts';
 import { stripThinkTags } from '../../lib/message-text';
-import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
+import { PanelRightOpen, PanelRightClose, Database, X } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
+import { ArcReactor } from '../Jarvis/ArcReactor';
+import { HandsFreeGate } from '../Jarvis/HandsFreeGate';
+import { useHudStore } from '../../lib/hud';
+import { fetchBriefing, type Briefing } from '../../lib/jarvis';
+import { pickFiller } from '../../lib/fillers';
+
+// The core owns the stage: as large as the viewport allows, and still large beside the
+// transcript once a conversation starts (it only shrinks on narrow windows).
+function useCoreSize(isEmpty: boolean): number {
+  const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
+  useEffect(() => {
+    const on = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, []);
+  const stageW = vp.w - 90;
+  if (isEmpty) return Math.round(Math.max(280, Math.min(900, vp.h * 0.8, stageW * 0.72)));
+  if (vp.w < 1100) return 190;
+  return Math.round(Math.max(300, Math.min(780, vp.h * 0.74, stageW * 0.54)));
+}
+
+function getGreetingPt(): string {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Bom dia';
+  if (hour < 18) return 'Boa tarde';
+  return 'Boa noite';
+}
 
 function getGreeting(): string {
   const hour = new Date().getHours();
@@ -49,6 +76,7 @@ export function ChatArea() {
   // and browsers block that anyway: playback with no preceding user gesture is
   // rejected outright, so the failure would be silent in both senses.
   const streamingConversationRef = useRef<string | null>(null);
+  const spokenRef = useRef<{ id: string; n: number }>({ id: '', n: 0 });
   useEffect(() => {
     const last = messages[messages.length - 1];
     const tts = useTtsStore.getState();
@@ -82,10 +110,47 @@ export function ChatArea() {
       const text = stripThinkTags(currentLast.content);
       if (!text) return;
       currentTts.markAutoSpoken(completedMessageId);
-      void currentTts.speak(completedMessageId, text);
+      // Sentences already spoken while the reply was streaming are not repeated.
+      const already = spokenRef.current.id === completedMessageId ? spokenRef.current.n : 0;
+      const rest = text.slice(already);
+      if (already === 0) void currentTts.speak(completedMessageId, text);
+      else if (rest.trim()) currentTts.enqueue(completedMessageId, rest);
     });
   }, [activeId, messages, streamState.isStreaming, isCurrentChatStreaming, voiceOutputEnabled, voiceAutoplay]);
   const currentStreamContent = isCurrentChatStreaming ? streamState.content : '';
+
+  // If nothing has arrived a moment after the request went out, say a short cached
+  // acknowledgement so the wait does not feel like a hang. Only in hands-free mode.
+  const handsFreeOn = useHudStore((s) => s.active && s.wake !== 'off');
+  useEffect(() => {
+    if (!isCurrentChatStreaming || !handsFreeOn || !voiceOutputEnabled || !voiceAutoplay) return;
+    const timer = setTimeout(() => {
+      const app = useAppStore.getState();
+      const last = app.messages[app.messages.length - 1];
+      if (!app.streamState.isStreaming || !last || last.role !== 'assistant') return;
+      if (stripThinkTags(app.streamState.content).trim()) return;
+      if (useTtsStore.getState().state !== 'idle') return;
+      const filler = pickFiller();
+      if (filler) useTtsStore.getState().enqueueBlob(last.id, filler);
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [isCurrentChatStreaming, handsFreeOn, voiceOutputEnabled, voiceAutoplay]);
+
+  // Start talking before the reply is finished: every complete sentence that arrives in the
+  // stream goes to the voice queue right away.
+  useEffect(() => {
+    if (!isCurrentChatStreaming || !voiceOutputEnabled || !voiceAutoplay) return;
+    const tts = useTtsStore.getState();
+    if (tts.available !== true) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant') return;
+    if (spokenRef.current.id !== last.id) spokenRef.current = { id: last.id, n: 0 };
+    const text = stripThinkTags(streamState.content);
+    const ready = text.slice(spokenRef.current.n).match(/^[\s\S]*[.!?…:](?=\s)/);
+    if (!ready || ready[0].trim().length < 12) return;
+    spokenRef.current.n += ready[0].length;
+    tts.enqueue(last.id, ready[0]);
+  }, [isCurrentChatStreaming, streamState.content, messages, voiceOutputEnabled, voiceAutoplay]);
 
   // Check if any data sources are connected
   const [hasConnectedSources, setHasConnectedSources] = useState<boolean | null>(null);
@@ -129,13 +194,39 @@ export function ChatArea() {
   };
 
   const isEmpty = messages.length === 0 && !isCurrentChatStreaming;
+  const coreSize = useCoreSize(isEmpty);
+
+  // Greeting of a new chat: time of day, new WhatsApp messages and emails, weather warning.
+  // It is shown always and spoken once per new chat when hands-free mode is on (browsers
+  // only allow audio after the click that turns it on).
+  const handsFree = useHudStore((s) => s.active && s.wake !== 'off');
+  const greetNonce = useHudStore((s) => s.greetNonce);
+  const [brief, setBrief] = useState<Briefing | null>(null);
+  const briefedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isEmpty) return;
+    let cancelled = false;
+    const key = `${activeId ?? 'new'}:${greetNonce}`;
+    fetchBriefing()
+      .then((b) => {
+        if (cancelled) return;
+        setBrief(b);
+        if (!handsFree || briefedRef.current === key) return;
+        briefedRef.current = key;
+        void useTtsStore.getState().ensureHealth().then(() => {
+          if (useTtsStore.getState().available === true) void useTtsStore.getState().speak(`briefing-${key}`, b.text);
+        });
+      })
+      .catch(() => setBrief(null));
+    return () => { cancelled = true; };
+  }, [isEmpty, activeId, greetNonce, handsFree]);
 
   const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
 
   return (
-    <div className="flex flex-col h-full">
+    <div className={`holo-stage flex flex-col h-full ${isEmpty ? 'empty' : 'talk'}`}>
       {/* Toggle bar */}
-      <div className="flex items-center justify-end px-3 py-1.5 shrink-0">
+      <div className="holo-toggle flex items-center justify-end px-3 py-1.5 shrink-0">
         <button
           onClick={toggleSystemPanel}
           className="p-1.5 rounded-md transition-colors cursor-pointer"
@@ -175,58 +266,23 @@ export function ChatArea() {
           </button>
         </div>
       )}
+      <div className={`jarvis-hero ${isEmpty ? 'big' : 'small'}`}>
+        <ArcReactor size={coreSize} />
+        {isEmpty && (
+          <div className="jarvis-greet">
+            <h2>{brief?.greeting ?? `${getGreetingPt()}, senhor.`}</h2>
+            <p>{brief ? `${brief.inbox}${brief.weather_alert ? ` ${brief.weather_alert}` : ''}` : 'Diga "Jarvis" e faça o pedido.'}</p>
+          </div>
+        )}
+        <HandsFreeGate />
+      </div>
       <div
         ref={listRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto"
+        className="holo-transcript flex-1 overflow-y-auto"
       >
         {isEmpty ? (
-          <div className="flex flex-col items-center justify-center h-full px-4">
-            <div
-              className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
-              style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
-            >
-              <Sparkles size={24} />
-            </div>
-            <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--color-text)' }}>
-              {getGreeting()}
-            </h2>
-            <p className="text-sm text-center max-w-sm mb-6" style={{ color: 'var(--color-text-secondary)' }}>
-              Ask anything. Your AI runs locally — private, fast, and always available.
-            </p>
-
-            {/* Quick action hints */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => navigate('/data-sources')}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs cursor-pointer transition-colors"
-                style={{
-                  background: 'var(--color-bg-secondary)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-              >
-                <Database size={14} style={{ color: 'var(--color-accent)' }} />
-                Connect Data Sources
-              </button>
-              <button
-                onClick={() => { navigate('/data-sources'); setTimeout(() => window.dispatchEvent(new CustomEvent('switch-tab', { detail: 'messaging' })), 100); }}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-xs cursor-pointer transition-colors"
-                style={{
-                  background: 'var(--color-bg-secondary)',
-                  border: '1px solid var(--color-border)',
-                  color: 'var(--color-text-secondary)',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
-                onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
-              >
-                <MessageSquare size={14} style={{ color: 'var(--color-accent)' }} />
-                Set Up Messaging Channels
-              </button>
-            </div>
-          </div>
+          <div className="h-full" />
         ) : (
           <div className="max-w-[var(--chat-max-width)] mx-auto px-4 py-6">
             {messages.map((msg, i) => {

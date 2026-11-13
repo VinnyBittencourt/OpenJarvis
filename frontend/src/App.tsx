@@ -8,6 +8,7 @@ import { GetStartedPage } from './pages/GetStartedPage';
 import { AgentsPage } from './pages/AgentsPage';
 import { DataSourcesPage } from './pages/DataSourcesPage';
 import { LogsPage } from './pages/LogsPage';
+import { SystemPage } from './pages/SystemPage';
 import { CommandPalette } from './components/CommandPalette';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
@@ -82,6 +83,16 @@ export default function App() {
       });
     return () => { cancelled = true; };
   }, [setupDone, setModels, setModelsLoading]);
+
+  // Retry while no model is selected: the page can load before the local
+  // server (or Ollama) is ready, and the first fetch then fails silently.
+  useEffect(() => {
+    if (!setupDone || selectedModel) return;
+    const id = setInterval(() => {
+      fetchModels().then((m) => { if (m.length) setModels(m); }).catch(() => {});
+    }, 3000);
+    return () => clearInterval(id);
+  }, [setupDone, selectedModel, setModels]);
 
   // Fetch server info
   useEffect(() => {
@@ -200,6 +211,7 @@ export default function App() {
           <Route path="data-sources" element={<DataSourcesPage />} />
           <Route path="agents" element={<AgentsPage />} />
           <Route path="logs" element={<LogsPage />} />
+          <Route path="system" element={<SystemPage />} />
         </Route>
       </Routes>
       <Toaster position="bottom-right" />

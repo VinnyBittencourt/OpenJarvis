@@ -1,0 +1,351 @@
+/* Jarvis holographic theme.
+   One idea drives everything: light projected into a dark room. Surfaces are glass, edges are
+   light, and the only solid-looking object on screen is the 3D core. */
+html.jarvis-hud,
+html.jarvis-hud.dark,
+html.jarvis-hud.light {
+  --holo: 95, 230, 255;        /* projected cyan */
+  --holo-hot: 233, 251, 255;   /* overexposed white */
+  --ember: 255, 179, 71;       /* working / warning amber */
+  --void: #01050a;
+  --display: 'Bahnschrift', 'DIN Alternate', 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Cascadia Mono', 'Cascadia Code', Consolas, monospace;
+
+  --color-bg: rgba(1, 7, 13, 0.62);
+  --color-bg-secondary: rgba(6, 26, 40, 0.58);
+  --color-bg-tertiary: rgba(10, 40, 58, 0.66);
+  --color-surface: rgba(6, 24, 37, 0.62);
+  --color-sidebar: rgba(1, 9, 15, 0.55);
+  --color-border: rgba(var(--holo), 0.22);
+  --color-border-subtle: rgba(var(--holo), 0.09);
+  --color-text: #dff9ff;
+  --color-text-secondary: #8fc3d2;
+  --color-text-tertiary: #5d8b9a;
+  --color-text-inverse: #02121c;
+  --color-accent: rgb(var(--holo));
+  --color-accent-hover: #a4f1ff;
+  --color-accent-subtle: rgba(var(--holo), 0.1);
+  --color-accent-glow: rgba(var(--holo), 0.45);
+  --color-on-accent: #021019;
+  --color-input-bg: rgba(3, 17, 27, 0.6);
+  --color-input-border: rgba(var(--holo), 0.3);
+  --color-user-bubble: rgba(var(--holo), 0.1);
+  --color-user-bubble-text: #e6fbff;
+  --color-code-bg: rgba(1, 10, 17, 0.85);
+  --color-success: #4be3a4;
+  --color-warning: rgb(var(--ember));
+  --color-error: #ff5d6c;
+  --radius-sm: 2px; --radius-md: 2px; --radius-lg: 3px; --radius-xl: 4px;
+  --radius-2xl: 4px; --radius-3xl: 6px; --radius: 3px;
+  --font-sans: var(--display);
+  --px: 0; --py: 0;
+  color-scheme: dark;
+}
+
+html.jarvis-hud body {
+  background: var(--void);
+  font-family: var(--display);
+  font-feature-settings: 'tnum';
+  letter-spacing: 0.012em;
+}
+html.jarvis-hud ::selection { background: rgba(var(--holo), 0.35); }
+html.jarvis-hud * { scrollbar-color: rgba(var(--holo), 0.3) transparent; scrollbar-width: thin; }
+html.jarvis-hud .hud-backdrop { display: none; }
+html.jarvis-hud h1, html.jarvis-hud h2, html.jarvis-hud h3 { font-family: var(--display); font-weight: 300; letter-spacing: 0.04em; }
+html.jarvis-hud code, html.jarvis-hud pre, html.jarvis-hud .font-mono { font-family: var(--mono); }
+html.jarvis-hud :focus-visible { outline: 1px solid rgb(var(--holo)); outline-offset: 2px; }
+html.jarvis-hud textarea:focus, html.jarvis-hud input:focus { outline: none; }
+
+/* ---------- Ambient scene (all pages) ---------- */
+.holo-backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; display: none; }
+html.jarvis-hud .holo-backdrop { display: block; }
+.holo-backdrop canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.holo-horizon {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(60% 46% at calc(50% - var(--px) * 2%) 40%, rgba(var(--holo), 0.13), transparent 70%),
+    radial-gradient(90% 30% at 50% 104%, rgba(var(--holo), 0.16), transparent 70%),
+    linear-gradient(180deg, #01050a 0%, #020b13 55%, #031321 100%);
+}
+.holo-floor {
+  position: absolute; left: -50%; right: -50%; bottom: -8%; height: 62vh;
+  perspective: 620px; perspective-origin: calc(50% - var(--px) * 3%) 0%;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 55%, #000 100%);
+          mask-image: linear-gradient(180deg, transparent 0%, #000 55%, #000 100%);
+}
+.holo-floor i {
+  position: absolute; inset: 0; transform: rotateX(76deg); transform-origin: 50% 0%;
+  background-image:
+    linear-gradient(rgba(var(--holo), 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--holo), 0.2) 1px, transparent 1px);
+  background-size: 72px 72px;
+  animation: floor-run 5s linear infinite;
+}
+.holo-vignette {
+  position: absolute; inset: 0;
+  background:
+    repeating-linear-gradient(180deg, rgba(0, 0, 0, 0.16) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.72) 100%);
+}
+@keyframes floor-run { to { background-position: 0 72px, 0 0; } }
+
+/* ---------- Shell: sidebar and pages ---------- */
+html.jarvis-hud aside {
+  backdrop-filter: blur(14px) saturate(1.3); -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  border-right: 1px solid rgba(var(--holo), 0.18) !important;
+  box-shadow: 24px 0 60px -40px rgba(var(--holo), 0.5);
+  position: fixed !important; left: 72px; top: 0; bottom: 0; z-index: 44 !important;
+}
+html.jarvis-hud aside::after { /* a light travelling down the sidebar edge */
+  content: ''; position: absolute; top: 0; right: -1px; width: 1px; height: 22%;
+  background: linear-gradient(180deg, transparent, rgb(var(--holo-hot)), transparent);
+  animation: edge-run 6s cubic-bezier(.6, 0, .4, 1) infinite; pointer-events: none;
+}
+@keyframes edge-run { 0% { transform: translateY(-100%); } 100% { transform: translateY(560%); } }
+html.jarvis-hud aside nav button, html.jarvis-hud aside nav a { transition: transform 180ms, color 180ms, background 180ms, text-shadow 180ms; letter-spacing: 0.05em; }
+html.jarvis-hud aside nav button:hover, html.jarvis-hud aside nav a:hover { transform: translateX(4px); text-shadow: 0 0 12px rgba(var(--holo), 0.8); }
+
+/* Each page is projected in: one unfold per navigation. */
+html.jarvis-hud main > div > * { animation: page-project 620ms cubic-bezier(.2, .8, .2, 1) backwards; transform-origin: 50% 0%; }
+@keyframes page-project {
+  0% { opacity: 0; transform: perspective(1400px) rotateX(-10deg) translateY(26px) scale(0.985); filter: brightness(2.2) blur(5px); }
+  55% { opacity: 1; filter: brightness(1.25) blur(0); }
+  100% { opacity: 1; transform: none; filter: none; }
+}
+
+/* Glass surfaces anywhere in the app (cards set their background inline). */
+html.jarvis-hud main [style*="--color-surface"],
+html.jarvis-hud main [style*="--color-bg-secondary"] {
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: inset 0 1px 0 rgba(var(--holo-hot), 0.07), inset 0 0 30px -16px rgba(var(--holo), 0.55);
+  transition: box-shadow 240ms, border-color 240ms, transform 240ms;
+}
+html.jarvis-hud main [style*="--color-surface"]:hover {
+  box-shadow: inset 0 1px 0 rgba(var(--holo-hot), 0.12), inset 0 0 34px -14px rgba(var(--holo), 0.7), 0 0 28px -12px rgba(var(--holo), 0.6);
+}
+html.jarvis-hud [role="dialog"], html.jarvis-hud [data-sonner-toast] {
+  background: rgba(3, 16, 26, 0.92) !important; backdrop-filter: blur(18px);
+  border: 1px solid rgba(var(--holo), 0.35) !important;
+  box-shadow: 0 0 60px -18px rgba(var(--holo), 0.7), inset 0 0 40px -22px rgba(var(--holo), 0.6) !important;
+}
+html.jarvis-hud button { transition: border-color 200ms, box-shadow 200ms, background 200ms, color 200ms, transform 200ms; }
+
+/* ---------- The core ---------- */
+.holo-core { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; }
+.holo-core canvas { display: block; filter: drop-shadow(0 0 6px rgba(var(--core), 0.55)); }
+.holo-state {
+  position: absolute; left: 50%; bottom: 20%; transform: translateX(-50%); white-space: nowrap;
+  font: 400 12px/1 var(--display); letter-spacing: 0.34em; text-transform: uppercase;
+  color: rgb(var(--core)); text-shadow: 0 0 14px rgba(var(--core), 0.9); transition: color 400ms;
+}
+.holo-core.small .holo-state { bottom: -6px; font-size: 10px; }
+.holo-state::before, .holo-state::after {
+  content: ''; position: absolute; top: 50%; width: 46px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--core), 0.9));
+}
+.holo-state::before { right: calc(100% + 14px); }
+.holo-state::after { left: calc(100% + 14px); transform: scaleX(-1); }
+/* ---------- Chat cockpit ---------- */
+.jarvis-greet { text-align: center; margin-top: 0; animation: greet-in 900ms 1.2s cubic-bezier(.2, .8, .2, 1) backwards; }
+.jarvis-greet h2 {
+  font: 200 clamp(28px, 4.2vh, 44px)/1.1 var(--display); font-stretch: 85%; letter-spacing: 0.06em; margin: 0;
+  color: rgb(var(--holo-hot)); text-shadow: 0 0 26px rgba(var(--holo), 0.75), 0 0 2px rgba(var(--holo), 0.9);
+}
+.jarvis-greet p { font-size: 15px; line-height: 1.5; letter-spacing: 0.05em; color: var(--color-text-secondary); margin: 8px auto 0; max-width: 620px; text-wrap: balance; }
+@keyframes greet-in { from { opacity: 0; letter-spacing: 0.5em; filter: blur(8px); } }
+
+.hud-gate { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 18px; }
+.jarvis-hero.small .hud-gate { margin-top: 20px; }
+.hud-gate p { margin: 0; font-size: 12px; color: var(--color-text-tertiary); letter-spacing: 0.04em; }
+.hud-gate p.err { color: var(--color-error); }
+.hud-gate-btn {
+  position: relative; overflow: hidden; cursor: pointer;
+  font: 500 13px/1 var(--display); letter-spacing: 0.3em; text-transform: uppercase; padding: 14px 38px;
+  color: rgb(var(--holo-hot)); background: rgba(var(--holo), 0.09); border: 1px solid rgba(var(--holo), 0.8);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  text-shadow: 0 0 10px rgba(var(--holo), 0.9);
+}
+.hud-gate-btn::after { /* light sweeping across */
+  content: ''; position: absolute; inset: 0; transform: translateX(-120%) skewX(-24deg);
+  background: linear-gradient(90deg, transparent, rgba(var(--holo-hot), 0.45), transparent);
+  animation: gate-sweep 3.2s ease-in-out infinite;
+}
+.hud-gate-btn:hover { background: rgba(var(--holo), 0.24); transform: translateY(-1px) scale(1.02); }
+.hud-gate-btn.off { font-size: 10px; padding: 7px 18px; opacity: 0.55; letter-spacing: 0.22em; }
+.hud-gate-btn.off::after { display: none; }
+@keyframes gate-sweep { 0%, 55% { transform: translateX(-120%) skewX(-24deg); } 100% { transform: translateX(120%) skewX(-24deg); } }
+
+/* Transcript: what you said is a chamfered plate, what Jarvis says is light on the left. */
+.holo-user > div {
+  border: 1px solid rgba(var(--holo), 0.4) !important; border-radius: 0 !important;
+  clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  backdrop-filter: blur(8px); box-shadow: inset 0 0 26px -10px rgba(var(--holo), 0.6);
+  animation: plate-in 380ms cubic-bezier(.2, .8, .2, 1) backwards; transform-origin: 100% 50%;
+}
+.holo-reply {
+  position: relative; padding-left: 18px; animation: reply-in 520ms cubic-bezier(.2, .8, .2, 1) backwards; transform-origin: 0 50%;
+  text-shadow: 0 0 18px rgba(var(--holo), 0.22);
+}
+.holo-reply::before {
+  content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 2px;
+  background: linear-gradient(180deg, rgb(var(--holo-hot)), rgba(var(--holo), 0.15)); box-shadow: 0 0 12px rgba(var(--holo), 0.9);
+}
+@keyframes plate-in { from { opacity: 0; transform: perspective(800px) rotateY(-28deg) translateX(30px); filter: brightness(2.4); } }
+@keyframes reply-in { from { opacity: 0; transform: perspective(800px) rotateY(18deg) translateX(-24px); filter: brightness(2) blur(3px); } }
+
+.holo-console {
+  border-radius: 0 !important; backdrop-filter: blur(12px); position: relative;
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px);
+  box-shadow: inset 0 0 34px -14px rgba(var(--holo), 0.6) !important;
+}
+.holo-console::before { /* light running along the top edge */
+  content: ''; position: absolute; top: 0; left: 0; width: 28%; height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(var(--holo-hot)), transparent);
+  animation: console-run 4.5s linear infinite; pointer-events: none;
+}
+.holo-console:focus-within { box-shadow: inset 0 0 40px -10px rgba(var(--holo), 0.85) !important; border-color: rgba(var(--holo), 0.75) !important; }
+@keyframes console-run { from { transform: translateX(-100%); } to { transform: translateX(460%); } }
+
+/* Frame around the chat: clock rail and the two floating panes. */
+.hud-scene { position: absolute; inset: 0; pointer-events: none; z-index: 0; overflow: hidden; perspective: 1300px; }
+.hud-rail {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%); display: flex; align-items: baseline; gap: 28px;
+  font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--color-text-tertiary); white-space: nowrap;
+}
+.hud-rail time { font: 300 22px/1 var(--display); letter-spacing: 0.14em; color: rgb(var(--holo-hot)); text-shadow: 0 0 16px rgba(var(--holo), 0.8); }
+.holo-pane {
+  position: absolute; top: 24%; width: 218px; padding: 16px 18px 18px; display: none; flex-direction: column; gap: 10px;
+  background: linear-gradient(160deg, rgba(var(--holo), 0.1), rgba(var(--holo), 0.02) 60%);
+  border: 1px solid rgba(var(--holo), 0.28); backdrop-filter: blur(6px);
+  box-shadow: 0 0 46px -18px rgba(var(--holo), 0.7), inset 0 0 30px -18px rgba(var(--holo), 0.8);
+  font-size: 12px; color: var(--color-text-secondary); letter-spacing: 0.05em;
+  animation: pane-float 7s ease-in-out infinite;
+}
+.holo-pane.left {
+  left: 30px; transform-origin: 0 50%;
+  transform: rotateY(calc(26deg + var(--px) * 5deg)) rotateX(calc(var(--py) * -3deg));
+  clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
+}
+.holo-pane.right {
+  right: 30px; transform-origin: 100% 50%; animation-delay: -3.5s;
+  transform: rotateY(calc(-26deg + var(--px) * 5deg)) rotateX(calc(var(--py) * -3deg));
+  clip-path: polygon(18px 0, 100% 0, 100% 100%, 0 100%, 0 18px);
+}
+.holo-pane h4 { margin: 0 0 4px; font: 400 13px/1 var(--display); letter-spacing: 0.3em; text-transform: uppercase; color: rgb(var(--holo-hot)); text-shadow: 0 0 12px rgba(var(--holo), 0.8); }
+.holo-pane p { margin: 0; }
+.holo-pane em { font-style: normal; color: var(--color-text); }
+.holo-pane blockquote { margin: 0; color: var(--color-text); font-size: 13px; line-height: 1.35; word-break: break-word; border-left: 1px solid rgba(var(--holo), 0.5); padding-left: 8px; }
+.pane-gauge { display: grid; grid-template-columns: 40px 1fr 26px; gap: 8px; align-items: center; }
+.pane-gauge b { text-align: right; color: var(--color-text); font: 400 12px var(--mono); }
+.pane-meter { height: 6px; background: repeating-linear-gradient(90deg, rgba(var(--holo), 0.14) 0 4px, transparent 4px 6px); }
+.pane-meter i {
+  display: block; height: 100%; transition: width 700ms cubic-bezier(.2, .8, .2, 1);
+  background: repeating-linear-gradient(90deg, rgb(var(--holo)) 0 4px, transparent 4px 6px); filter: drop-shadow(0 0 5px rgb(var(--holo)));
+}
+.pane-gauge[data-hot] .pane-meter i { background: repeating-linear-gradient(90deg, rgb(var(--ember)) 0 4px, transparent 4px 6px); filter: drop-shadow(0 0 5px rgb(var(--ember))); }
+.pane-level { height: 3px; background: rgba(var(--holo), 0.14); }
+.pane-level i { display: block; height: 100%; background: rgb(var(--holo-hot)); transform-origin: 0 50%; transition: transform 90ms linear; box-shadow: 0 0 10px rgb(var(--holo)); }
+@media (min-width: 1240px) { .holo-pane { display: flex; } }
+@keyframes pane-float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -10px; } }
+
+/* ---------- Start-up ---------- */
+.boot {
+  position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+  background: radial-gradient(60% 50% at 50% 45%, #04141f, #01050a 75%); color: rgb(var(--holo-hot)); font-family: var(--display);
+  transition: opacity 600ms, transform 600ms, filter 600ms; cursor: pointer;
+}
+.boot.leaving { opacity: 0; transform: scale(1.12); filter: blur(10px) brightness(2); pointer-events: none; }
+.boot-emblem { width: 190px; height: 190px; filter: drop-shadow(0 0 12px rgb(var(--holo))); }
+.boot-emblem circle { fill: none; stroke: rgb(var(--holo)); stroke-width: 1.2; transform-origin: 100px 100px; }
+.boot-emblem .b1 { stroke-dasharray: 578; stroke-dashoffset: 578; animation: boot-draw 1.3s cubic-bezier(.6, 0, .2, 1) forwards, boot-spin 9s linear infinite; }
+.boot-emblem .b2 { stroke-dasharray: 26 12; stroke-width: 3; opacity: 0; animation: boot-fade 500ms 0.35s forwards, boot-spin 5s linear infinite reverse; }
+.boot-emblem .b3 { stroke-dasharray: 327; stroke-dashoffset: 327; animation: boot-draw 1.1s 0.5s cubic-bezier(.6, 0, .2, 1) forwards; }
+.boot-emblem .b4 { fill: rgb(var(--holo-hot)); stroke: none; transform: scale(0); animation: boot-pop 500ms 1s cubic-bezier(.2, 1.6, .4, 1) forwards; }
+.boot-title { margin: 0; font: 200 34px/1 var(--display); letter-spacing: 0.5em; padding-left: 0.5em; text-shadow: 0 0 24px rgb(var(--holo)); animation: greet-in 900ms 0.3s backwards; }
+.boot-lines { list-style: none; margin: 0; padding: 0; width: 290px; display: flex; flex-direction: column; gap: 7px; font-size: 13px; letter-spacing: 0.06em; }
+.boot-lines li { display: flex; justify-content: space-between; color: var(--color-text-secondary); animation: boot-line 380ms backwards; }
+.boot-lines b { font-weight: 400; color: rgb(var(--holo)); }
+.boot-progress { width: 290px; height: 2px; background: rgba(var(--holo), 0.15); }
+.boot-progress i { display: block; height: 100%; background: rgb(var(--holo-hot)); box-shadow: 0 0 12px rgb(var(--holo)); transform-origin: 0 50%; animation: boot-bar 2.3s cubic-bezier(.5, 0, .2, 1) forwards; }
+@keyframes boot-draw { to { stroke-dashoffset: 0; } }
+@keyframes boot-spin { to { rotate: 360deg; } }
+@keyframes boot-fade { to { opacity: 0.8; } }
+@keyframes boot-pop { to { transform: scale(1); } }
+@keyframes boot-line { from { opacity: 0; transform: translateX(-14px); } }
+@keyframes boot-bar { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+/* ---------- Radical layout: the core owns the stage ---------- */
+.holo-dock, .holo-keys { display: none; }
+html.jarvis-hud .oj-open-sidebar { display: none; }
+html.jarvis-hud .holo-scrim { display: block !important; z-index: 43; background: rgba(0, 4, 8, 0.55); backdrop-filter: blur(3px); }
+html.jarvis-hud main { padding-left: 78px; }
+
+/* Navigation rail of diamond keys */
+html.jarvis-hud .holo-dock {
+  position: fixed; left: 17px; top: 50%; transform: translateY(-50%); z-index: 45;
+  display: flex; flex-direction: column; align-items: center; gap: 15px;
+}
+.holo-dock::before {
+  content: ''; position: absolute; top: -46px; bottom: -46px; left: 50%; width: 1px; z-index: -1;
+  background: linear-gradient(180deg, transparent, rgba(var(--holo), 0.55) 20%, rgba(var(--holo), 0.55) 80%, transparent);
+}
+.holo-dock button { position: relative; width: 38px; height: 38px; padding: 0; background: none; border: 0; cursor: pointer; color: var(--color-text-secondary); }
+.holo-dock button i {
+  position: absolute; inset: 4px; display: grid; place-items: center; transform: rotate(45deg);
+  border: 1px solid rgba(var(--holo), 0.38); background: rgba(2, 14, 22, 0.9);
+  transition: border-color 200ms, box-shadow 200ms, background 200ms, transform 300ms cubic-bezier(.2, 1.4, .4, 1);
+}
+.holo-dock button i svg { transform: rotate(-45deg); }
+.holo-dock button:hover i { transform: rotate(45deg) scale(1.18); border-color: rgb(var(--holo)); color: rgb(var(--holo-hot)); box-shadow: 0 0 20px rgba(var(--holo), 0.75), inset 0 0 12px rgba(var(--holo), 0.5); }
+.holo-dock button.on i { background: rgba(var(--holo), 0.24); border-color: rgb(var(--holo-hot)); color: rgb(var(--holo-hot)); box-shadow: 0 0 24px rgba(var(--holo), 0.9), inset 0 0 14px rgba(var(--holo), 0.6); }
+.holo-dock button span {
+  position: absolute; left: calc(100% + 16px); top: 50%; transform: translate(-10px, -50%); opacity: 0; pointer-events: none; white-space: nowrap;
+  font: 400 12px/1 var(--display); letter-spacing: 0.2em; text-transform: uppercase; color: rgb(var(--holo-hot)); padding: 8px 14px;
+  background: rgba(2, 14, 22, 0.92); border: 1px solid rgba(var(--holo), 0.45);
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition: opacity 180ms, transform 180ms;
+}
+.holo-dock button:hover span, .holo-dock button:focus-visible span { opacity: 1; transform: translate(0, -50%); }
+.holo-dock hr { width: 12px; margin: 0; border: 0; border-top: 1px solid rgba(var(--holo), 0.6); }
+
+/* Chat stage */
+.jarvis-hero { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; flex: none; }
+.holo-stage.empty > .jarvis-hero { flex: 1 1 auto; min-height: 0; padding-bottom: 1vh; }
+.holo-stage.empty > .holo-transcript { flex: 0 0 0px; }
+.holo-stage.empty .holo-core, .holo-stage.talk .holo-core.big { position: absolute; left: 50%; top: 46%; transform: translate(-50%, -50%); z-index: -1; }
+.holo-stage.talk > .jarvis-hero { height: 226px; justify-content: center; }
+html.jarvis-hud .holo-toggle { position: absolute; top: 0; right: 0; z-index: 3; opacity: 0.5; }
+@media (min-width: 1100px) {
+  .holo-stage.talk { display: grid; grid-template-columns: minmax(0, 1fr) minmax(400px, 40%); grid-template-rows: auto minmax(0, 1fr) auto; perspective: 1600px; }
+  .holo-stage.talk > .mx-4 { grid-column: 1 / -1; grid-row: 1; }
+  .holo-stage.talk > .jarvis-hero { grid-column: 1; grid-row: 2 / 4; height: auto; justify-content: flex-end; padding-bottom: 3vh; }
+  .holo-stage.talk > .holo-transcript {
+    grid-column: 2; grid-row: 2; margin: 64px 34px 0 0; padding: 0 6px 0 2px;
+    transform-origin: 100% 50%; transform: rotateY(calc(-5deg + var(--px) * 1.5deg));
+    border-left: 1px solid rgba(var(--holo), 0.35);
+    background: linear-gradient(90deg, rgba(var(--holo), 0.07), transparent 45%);
+    -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 9%, #000 93%, transparent 100%);
+            mask-image: linear-gradient(180deg, transparent 0, #000 9%, #000 93%, transparent 100%);
+    animation: reply-in 700ms cubic-bezier(.2, .8, .2, 1) backwards;
+  }
+  .holo-stage.talk > .holo-input { grid-column: 2; grid-row: 3; margin-right: 34px !important; }
+  .hud-scene.talk .holo-pane.right { display: none; }
+  .hud-scene.talk .holo-pane.left { top: auto; bottom: 7%; scale: 0.82; }
+  .hud-scene.talk .hud-rail { left: 30%; }
+}
+
+/* Keyboard console, folded away by default */
+html.jarvis-hud .holo-keys {
+  display: block; margin: 0 auto 10px; cursor: pointer; padding: 7px 18px;
+  font: 400 10px/1 var(--display); letter-spacing: 0.26em; text-transform: uppercase;
+  color: var(--color-text-tertiary); background: rgba(2, 14, 22, 0.6); border: 1px solid rgba(var(--holo), 0.25);
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+html.jarvis-hud .holo-keys:hover { color: rgb(var(--holo-hot)); border-color: rgba(var(--holo), 0.8); }
+html.jarvis-hud .holo-input.closed > :not(.holo-keys) { display: none; }
+html.jarvis-hud .holo-input.closed { padding-top: 0; padding-bottom: 12px; }
+html.jarvis-hud .holo-input.open { animation: reply-in 380ms cubic-bezier(.2, .8, .2, 1) backwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  html.jarvis-hud *, html.jarvis-hud *::before, html.jarvis-hud *::after { animation: none !important; transition: none !important; }
+}

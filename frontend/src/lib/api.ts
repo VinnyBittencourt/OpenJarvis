@@ -402,6 +402,18 @@ export interface TtsHealth {
   reason?: string;
 }
 
+// Jarvis patch: speaking rate of the voice. Override with localStorage 'jarvis-voice-speed'.
+const JARVIS_VOICE_SPEED = 1.2;
+function jarvisVoiceSpeed(): number {
+  try {
+    const v = parseFloat(localStorage.getItem('jarvis-voice-speed') ?? '');
+    if (v >= 0.7 && v <= 1.6) return v;
+  } catch {
+    /* storage unavailable */
+  }
+  return JARVIS_VOICE_SPEED;
+}
+
 export async function synthesizeSpeech(
   text: string,
   opts: { voiceId?: string; speed?: number; signal?: AbortSignal } = {},
@@ -409,7 +421,7 @@ export async function synthesizeSpeech(
   const res = await apiFetch(`/v1/speech/synthesize`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice_id: opts.voiceId, speed: opts.speed }),
+    body: JSON.stringify({ text, voice_id: opts.voiceId, speed: opts.speed ?? jarvisVoiceSpeed() }),
     signal: opts.signal,
   });
   if (!res.ok) {
